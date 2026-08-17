@@ -1,4 +1,4 @@
-# DeepSeek Harness for VS Code
+# DeepSeek Harness Web for VS Code
 
 一键启动 **DeepSeek Harness**，把它的完整 Web UI 内嵌进 VS Code（及兼容 fork 的 Antigravity IDE）——在同一个窗口里跑 DSH agent、写代码，与浏览器打开的实例**共享同一份状态**。
 

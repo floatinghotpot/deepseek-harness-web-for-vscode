@@ -1,4 +1,4 @@
-# DeepSeek Harness for VS Code
+# DeepSeek Harness Web for VS Code
 
 Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigravity, the VS Code fork) — so you can run DSH agents and edit code in one window, sharing the same instance as your browser.
 
