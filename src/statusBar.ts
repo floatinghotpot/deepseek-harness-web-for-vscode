@@ -2,6 +2,7 @@
 // T9 but missing until the sidebar view was replaced by an editor tab.
 import * as vscode from "vscode";
 import { DshServerManager, type ServerState } from "./serverManager.js";
+import { t } from "./i18n.js";
 
 const CMD_START = "deepseek-harness-for-vscode.start";
 const CMD_OPEN_PANEL = "deepseek-harness-for-vscode.openPanel";
@@ -15,24 +16,24 @@ export function createDshStatusBar(
   const render = (state: ServerState, url?: string): void => {
     switch (state) {
       case "stopped":
-        item.text = "$(circle-outline) DeepSeek Harness: 启动";
+        item.text = `$(circle-outline) ${t("statusbar.stopped")}`;
         item.command = CMD_START;
-        item.tooltip = "启动 DeepSeek Harness";
+        item.tooltip = t("statusbar.tip.start");
         break;
       case "starting":
-        item.text = "$(sync~spin) DeepSeek Harness 启动中…";
+        item.text = `$(sync~spin) ${t("statusbar.starting")}`;
         item.command = undefined;
-        item.tooltip = "正在启动 DSH 服务";
+        item.tooltip = t("statusbar.tip.starting");
         break;
       case "ready":
-        item.text = `$(server) DSH ${url ?? ""}`;
+        item.text = `$(server) ${t("statusbar.ready", { url: url ?? "" })}`;
         item.command = CMD_OPEN_PANEL;
-        item.tooltip = "点击打开面板";
+        item.tooltip = t("statusbar.tip.openPanel");
         break;
       case "error":
-        item.text = "$(error) DSH 错误";
+        item.text = `$(error) ${t("statusbar.error")}`;
         item.command = CMD_START;
-        item.tooltip = "启动失败，点击重试";
+        item.tooltip = t("statusbar.tip.retry");
         break;
       default:
         break;

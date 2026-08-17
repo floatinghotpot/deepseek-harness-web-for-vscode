@@ -7,6 +7,7 @@ import { DshServerManager, type ServerInfo } from "./serverManager.js";
 import { assembleDocument } from "./documentAssembly.js";
 import { BridgeHost } from "./bridgeHost.js";
 import { workspaceRoot } from "./commands.js";
+import { t } from "./i18n.js";
 
 const DIST_DIR_NAME = "dsh-dist";
 const PANEL_TITLE = "DeepSeek Harness";
@@ -32,7 +33,7 @@ function placeholderHtml(): string {
   var msg = document.getElementById("dsh-msg");
   var btn = document.getElementById("dsh-start");
   overlay.hidden = false;
-  msg.textContent = "DSH 服务未启动";
+  msg.textContent = ${JSON.stringify(t("overlay.stopped"))};
   btn.style.display = "inline-block";
 })();
 </script>
@@ -54,7 +55,7 @@ border:none;border-radius:3px;padding:6px 16px;font-family:var(--vscode-font-fam
 </style>
 <div id="dsh-overlay" hidden>
   <div id="dsh-msg">DeepSeek Harness</div>
-  <button id="dsh-start" style="display:none">启动 DeepSeek Harness</button>
+  <button id="dsh-start" style="display:none">${t("button.start")}</button>
 </div>
 <script>
 (function(){
@@ -69,9 +70,9 @@ border:none;border-radius:3px;padding:6px 16px;font-family:var(--vscode-font-fam
     if (m.state === "ready") { overlay.hidden = true; return; }
     overlay.hidden = false;
     btn.style.display = m.state === "stopped" || m.state === "error" ? "inline-block" : "none";
-    if (m.state === "starting") msg.textContent = "DeepSeek Harness 启动中…";
-    else if (m.state === "stopped") msg.textContent = "DSH 服务未启动";
-    else if (m.state === "error") msg.textContent = "DSH 错误：" + (m.message || "未知错误");
+    if (m.state === "starting") msg.textContent = ${JSON.stringify(t("overlay.starting"))};
+    else if (m.state === "stopped") msg.textContent = ${JSON.stringify(t("overlay.stopped"))};
+    else if (m.state === "error") msg.textContent = ${JSON.stringify(t("overlay.error", { message: "{message}" }))}.replace("{message}", m.message || "unknown");
   });
 })();
 </script>`;

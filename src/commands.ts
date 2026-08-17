@@ -2,6 +2,7 @@
 import * as os from "node:os";
 import * as vscode from "vscode";
 import { DshServerManager } from "./serverManager.js";
+import { t } from "./i18n.js";
 
 /** The first workspace folder, or the OS home when no folder is open. */
 export function workspaceRoot(): string {
@@ -21,7 +22,7 @@ export function registerCommands(
         vscode.window.showInformationMessage(`DeepSeek Harness ready at ${url}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`Failed to start DeepSeek Harness: ${msg}`);
+        vscode.window.showErrorMessage(t("command.startFailed", { message: msg }));
       }
     }),
     vscode.commands.registerCommand("deepseek-harness-for-vscode.stop", async () => {
@@ -31,7 +32,7 @@ export function registerCommands(
     vscode.commands.registerCommand("deepseek-harness-for-vscode.openBrowser", async () => {
       const url = manager.serverUrl;
       if (!url) {
-        vscode.window.showWarningMessage("DeepSeek Harness is not running.");
+        vscode.window.showWarningMessage(t("command.notRunning"));
         return;
       }
       await vscode.env.openExternal(vscode.Uri.parse(url));

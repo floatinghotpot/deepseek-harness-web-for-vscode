@@ -1,8 +1,8 @@
 {
   "name": "deepseek-harness-for-vscode",
   "displayName": "DeepSeek Harness for VS Code",
-  "description": "Launch DeepSeek Harness and embed its Web UI inside VS Code & Antigravity — 一键启动 DeepSeek Harness，并把其 Web UI 内嵌进 IDE，与浏览器共享同一实例。",
-  "version": "0.0.2",
+  "description": "Launch DeepSeek Harness and embed its Web UI inside VS Code & Antigravity — one-click start, editor-tab panel, shared instance with the browser, clipboard and theme sync.",
+  "version": "0.0.3",
   "publisher": "floatinghotpot",
   "license": "MIT",
   "repository": {
