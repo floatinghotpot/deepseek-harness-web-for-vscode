@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+
+# Extension packages
+*.vsix
+
+# Spike artifacts (throwaway Phase 0 verification, removed after MVP)
+.spike-dsh-home/
+spike/
+
+# OS
+.DS_Store
+
+# Logs / editor
+*.log
+.vscode/.cache/
