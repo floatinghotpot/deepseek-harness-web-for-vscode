@@ -1,0 +1,7 @@
+{
+  "command.start.title": "启动",
+  "command.stop.title": "停止",
+  "command.openBrowser.title": "在浏览器打开",
+  "setting.themeSync.description": "将 VS Code 主题同步到内嵌的 DSH 界面。",
+  "command.openPanel.title": "打开面板"
+}

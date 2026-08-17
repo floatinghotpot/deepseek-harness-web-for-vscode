@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Code Review**: after any code changes, always check for bracket balance and syntax errors. if TypeScript changed, run `npm run compile` (tsc strict) and fix **ALL** issues — including `info` level. if plain JS changed, run `node --check <file>`. The target is zero issues.
 - **Defer Requires Proof**: Every deferred issue MUST cite a concrete blocker (unavailable API, cross-module migration plan, Phase 2 feature gate not yet open). Severity (P1/P2), frequency ("low risk"), or effort ("too large") are NOT valid reasons to defer — avoid small issues accumulate into technical debt.
 - **Partial Formatting**: ONLY format new or modified code. Global reformatting is FORBIDDEN.
-- **Environment Isolation**: No `make`, real-device testing, or deployment scripts allowed without permission. Publishing to VS Code Marketplace / Open VSX requires explicit user confirmation.
+- **Environment Isolation**: No `make`, real-device testing, or deployment scripts allowed without permission. **本仓库的 `Makefile`（compile/test/package/publish 等）已获用户许可（2026-08-17）**；发布目标从环境变量读令牌（`OVSX_TOKEN`/`VSCE_PAT`），令牌不进仓库。Publishing to VS Code Marketplace / Open VSX requires explicit user confirmation.
 - **Side Effects**: For operations with external side effects (e.g., API calls, spawning `dsh` servers, npm install), notify the risk in `Thought` beforehand.
 - **DSH 运行约束**: 扩展只能向 `127.0.0.1`/`localhost` 代发请求；不得弱化 DSH 的 `/api` 信任围栏；`dsh web` 不允许 `--host 0.0.0.0`。见 `doc/feature/00-dsh-vscode/spike-notes.md`（S2/F2）。
 

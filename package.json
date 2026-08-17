@@ -1,0 +1,121 @@
+{
+  "name": "deepseek-harness-for-vscode",
+  "displayName": "DeepSeek Harness for VS Code",
+  "description": "Launch DeepSeek Harness and embed its Web UI inside VS Code & Antigravity — 一键启动 DeepSeek Harness，并把其 Web UI 内嵌进 IDE，与浏览器共享同一实例。",
+  "version": "0.0.1",
+  "publisher": "floatinghotpot",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/floatinghotpot/deepseek-harness-for-vscode.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "files": [
+    "out/**",
+    "media/**",
+    "README.md",
+    "LICENSE",
+    "package.nls.json",
+    "package.nls.zh-cn.json",
+    "README.zh.md",
+    "media/icon.png"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "deepseek-harness-for-vscode.start",
+        "title": "%command.start.title%",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "deepseek-harness-for-vscode.stop",
+        "title": "%command.stop.title%",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "deepseek-harness-for-vscode.openBrowser",
+        "title": "%command.openBrowser.title%",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "deepseek-harness-for-vscode.openPanel",
+        "title": "%command.openPanel.title%",
+        "category": "DeepSeek Harness"
+      }
+    ],
+    "configuration": {
+      "title": "DeepSeek Harness for VS Code",
+      "properties": {
+        "deepseekHarness.themeSync": {
+          "type": "string",
+          "enum": [
+            "follow",
+            "off"
+          ],
+          "default": "follow",
+          "description": "%setting.themeSync.description%"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "deepseek-harness",
+          "title": "DeepSeek Harness",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "deepseek-harness": [
+        {
+          "type": "webview",
+          "id": "deepseek-harness.view",
+          "name": "DeepSeek Harness"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "test": "tsc -p ./ && node --test \"test/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.18.1",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "icon": "media/icon.png",
+  "keywords": [
+    "deepseek-harness",
+    "deepseek",
+    "ai-agent",
+    "coding-agent",
+    "vscode",
+    "webview",
+    "antigravity",
+    "ide",
+    "harness"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  }
+}

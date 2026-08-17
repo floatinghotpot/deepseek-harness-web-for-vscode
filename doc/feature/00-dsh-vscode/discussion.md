@@ -47,9 +47,11 @@
 ## 4. 开放问题（req 评审时确认）
 
 1. ~~publisher 账号~~ → **已解决：`floatinghotpot`**（2026-08-17）
-2. **VS Code 最低版本**：engines.vscode 设多少？（建议 ≥1.9x，solution 阶段定）
-3. **Node 版本策略**：依赖系统 Node ≥18，还是内置/引导？（影响 DSH 二进制解析顺序）
+2. ~~VS Code 最低版本~~ → **已解决：`engines.vscode: ^1.90.0`**（2026-08-17，T1）
+3. ~~Node 版本策略~~ → **已解决**（2026-08-17，T1）：扩展宿主 Node ≥18（`fetch`/`AbortSignal` 可用）；WS 中继用 `ws` 包（不依赖 Node 22 global WebSocket）；dsh 子进程用系统 Node（≥18），二进制多级探测兜底
 4. **隔离模式**：MVP 默认共享 `~/.dsh`；是否 MVP 内就要提供"自定义 DSH_HOME"设置？（建议 MVP 后）
+6. **界面形态**（2026-08-17 新增）：**编辑器标签页**（WebviewPanel，对齐 Claude Code 展示方式）替代侧边栏视图——用户实测发现侧边栏视图与资源管理器等侧栏树重叠。req R2 已同步修订。
+   - **2026-08-17 定案（混合形态）**：侧边栏保留轻量**启动器**（活动栏图标 + 状态 + 启动/打开面板/停止按钮），DSH 主界面始终开在**编辑器标签页**——启动器不承载 UI，与资源管理器树不冲突。req R2 已同步修订。
 5. **主题跟随**（2026-08-17 新增）：DSH 默认"跟随系统"，VS Code 深色模式下网页仍白底——是否把"主题跟随 VS Code"纳入 MVP？（方案：扩展经 API `settings.update {ns:'ui-theme', patch:{preference}}` 写入，跟随 VS Code 主题切换）
 
 *关联文档：架构提案 `doc/architecture/proposal-by-deepseek.md` ｜ 市场分析 `doc/marketing/market-analysis.md`*

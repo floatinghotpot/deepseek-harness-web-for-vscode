@@ -1,0 +1,7 @@
+{
+  "command.start.title": "Start",
+  "command.stop.title": "Stop",
+  "command.openBrowser.title": "Open in Browser",
+  "setting.themeSync.description": "Follow the VS Code color theme into the embedded DSH UI.",
+  "command.openPanel.title": "Open Panel"
+}
