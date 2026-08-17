@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 NPM := npm --cache .npm-cache
 VERSION ?= $(shell node -p "require('./package.json').version")
-VSIX ?= deepseek-harness-for-vscode-$(VERSION).vsix
+VSIX ?= $(shell node -p "require('./package.json').name")-$(VERSION).vsix
 
 .PHONY: help install compile watch test package publish publish-vscode publish-ovsx namespace tag clean
 

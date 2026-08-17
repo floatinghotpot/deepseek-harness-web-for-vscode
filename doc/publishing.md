@@ -3,12 +3,14 @@
 **日期**: 2026-08-17 ｜ 适用于：`floatinghotpot/deepseek-harness-for-vscode`
 
 双渠道信息：
-- **Extension ID**：`floatinghotpot.deepseek-harness-for-vscode`
+- **Extension ID**：`floatinghotpot.deepseek-harness-web-for-vscode`
 - **Marketplace publisher**：`floatinghotpot`（名下 0 扩展，2026-08-17 核实，可认领）
 - **Open VSX namespace**：`floatinghotpot`（未创建，需先创建）
 - **VSIX**：`npm run package`（当前 25+ 文件，含 icon.png/README/README.zh/LICENSE/nls）
 
 发布前元数据均已就绪：`icon`（128×128 PNG）、`keywords`、`galleryBanner`、`repository`、`engines`、`categories`、nls 双语、LICENSE(MIT)、README.md/README.zh.md。
+
+> **2026-08-17 改名**：原 `name: deepseek-harness-for-vscode` 在 VS Code Marketplace **全局唯一约束下被占用**（`skymecode/deepseek-harness-for-vscode`）→ 改为 `deepseek-harness-web-for-vscode`（v0.0.5 起）。Open VSX 旧条目 `floatinghotpot/deepseek-harness-for-vscode` 停留在 0.0.4，新 ID 双渠道一致。
 
 ---
 
@@ -33,7 +35,7 @@
 # 2) 打包
 npm run package
 # 3) 发布预构建的 vsix（--packagePath 跳过 vsce 的版本号/git 行为）
-npx --no-install vsce publish --packagePath deepseek-harness-for-vscode-0.0.2.vsix
+npx --no-install vsce publish --packagePath deepseek-harness-web-for-vscode-0.0.5.vsix
 ```
 
 ### 3. 更新与撤销
@@ -58,7 +60,7 @@ npx --no-install vsce publish --packagePath deepseek-harness-for-vscode-0.0.2.vs
 
 ### 2. 发布
 ```sh
-npx --yes ovsx publish deepseek-harness-for-vscode-0.0.2.vsix -p <OVSX_TOKEN>
+npx --yes ovsx publish deepseek-harness-web-for-vscode-0.0.5.vsix -p <OVSX_TOKEN>
 ```
 
 > Open VSX 发布时自动扫描（secret/blocklist/typosquat）——本仓库已通过自检（见安全审计）。
