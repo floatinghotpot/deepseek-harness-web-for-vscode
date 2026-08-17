@@ -123,6 +123,8 @@ export class DshPanel {
         localResourceRoots: [vscode.Uri.file(this.distRootPath())],
       }
     );
+    // Tab icon: WebviewPanel.iconPath is a settable property (unlike options).
+    panel.iconPath = vscode.Uri.file(path.join(this.context.extensionUri.fsPath, "media", "icon.png"));
     this.panel = panel;
     this.bridge = new BridgeHost(panel.webview, () => this.manager.serverUrl ?? "");
 
