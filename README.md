@@ -23,6 +23,8 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 - **Current folder as workspace** — the DSH default project directory is the folder you have open.
 - **Clipboard works** — copy/paste in the embedded UI goes through a transport bridge (VS Code webviews block clipboard inside iframes; the bridge routes it via `vscode.env.clipboard`).
 - **Theme follows VS Code** — the embedded UI follows your editor color theme (dark/light), live on switch (`deepseekHarness.themeSync`, default `follow`).
+- **Cross-platform** — macOS, Linux and Windows, verified end-to-end by CI (unit tests + a real `dsh` spawn smoke test on all three).
+- **Multilingual UI** — the extension chrome (launcher, overlay, status bar, commands) follows your VS Code language across 9 locales: English, 中文, 日本語, 한국어, Русский, Español, Português, Français, Deutsch.
 - **Security first** — the server binds loopback only; the extension relays requests as plain Node requests, never weakening DSH's `/api` trust fence. (Note: the embedded page and its plugins are trusted — clipboard read/write is bridged to the system clipboard without a browser permission prompt, the same trust you grant the extension itself.)
 
 ## Requirements
@@ -67,6 +69,9 @@ The extension spawns `dsh web --port 0`, serves the DSH frontend as same-origin 
 - Architecture proposal: [`doc/architecture/proposal-by-deepseek.md`](doc/architecture/proposal-by-deepseek.md)
 - Feature pipeline: [`doc/feature/00-dsh-vscode/`](doc/feature/00-dsh-vscode/)
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 ## License
 
 MIT — see [LICENSE](LICENSE). Copyright © 2026 Liming Xie.

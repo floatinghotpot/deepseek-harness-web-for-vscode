@@ -1,5 +1,6 @@
-// Parity test for the central bilingual string table (Appendix A):
-// every key must carry non-empty en + zh, and interpolation must work.
+// Parity test for the central multilingual string table (Appendix A):
+// every key must carry a non-empty value for EVERY supported language, and
+// interpolation must work.
 "use strict";
 
 const test = require("node:test");
@@ -7,13 +8,19 @@ const assert = require("node:assert");
 
 const { STRINGS, interpolate } = require("../out/i18nStrings.js");
 
-test("every i18n key has non-empty en and zh", () => {
+const LANGS = ["en", "zh", "ja", "ko", "ru", "es", "pt", "fr", "de"];
+
+test("every i18n key has non-empty values for all languages", () => {
   const keys = Object.keys(STRINGS);
   assert.ok(keys.length >= 20, `expected a substantial table, got ${keys.length}`);
   for (const key of keys) {
-    const row = STRINGS[key];
-    assert.ok(row.en.trim().length > 0, `${key}.en is empty`);
-    assert.ok(row.zh.trim().length > 0, `${key}.zh is empty`);
+    for (const lang of LANGS) {
+      const value = STRINGS[key][lang];
+      assert.ok(
+        typeof value === "string" && value.trim().length > 0,
+        `${key}.${lang} is empty`
+      );
+    }
   }
 });
 

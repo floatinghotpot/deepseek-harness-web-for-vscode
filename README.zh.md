@@ -23,6 +23,8 @@
 - **当前文件夹即工作区**：DSH 默认项目目录 = 你打开的文件夹。
 - **剪贴板可用**：内嵌 UI 的复制/粘贴走传输桥（VS Code webview 会屏蔽 iframe 内的剪贴板；桥通过 `vscode.env.clipboard` 转发）。
 - **主题跟随 VS Code**：内嵌 UI 跟随编辑器颜色主题（深/浅），切换即时生效（`deepseekHarness.themeSync`，默认 `follow`）。
+- **跨平台**：macOS / Linux / Windows 三平台，由 CI 端到端验证（单测 + 真实 `dsh` 冒烟）。
+- **多语言界面**：扩展壳层（启动器、覆盖层、状态栏、命令提示）跟随 VS Code 显示语言，共 9 种：English、中文、日本語、한국어、Русский、Español、Português、Français、Deutsch。
 - **安全优先**：服务仅绑定回环；扩展以纯 Node 请求代发，不弱化 DSH 的 `/api` 信任围栏。（注：内嵌页面及其插件视为受信——剪贴板读写桥接到系统剪贴板，无浏览器授权弹窗，与扩展本身的信任等级一致。）
 
 ## 环境要求
@@ -67,6 +69,9 @@ npm run package     # vsce package -> vsix
 - 架构提案：[`doc/architecture/proposal-by-deepseek.md`](doc/architecture/proposal-by-deepseek.md)
 - 特性流程：[`doc/feature/00-dsh-vscode/`](doc/feature/00-dsh-vscode/)
 
+## 变更日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。
 ## License
 
 MIT — 见 [LICENSE](LICENSE)。Copyright © 2026 Liming Xie。
