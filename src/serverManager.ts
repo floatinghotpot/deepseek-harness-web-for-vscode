@@ -238,6 +238,7 @@ export class DshServerManager extends EventEmitter {
           this.setState("stopped");
         }
         this.child = undefined;
+        this.url = undefined; // never expose a dead server URL
         this.emit("exit", { code, signal });
       });
 
@@ -264,10 +265,21 @@ export class DshServerManager extends EventEmitter {
     this.startReject?.(err);
   }
 
+  /** Settle a pending start() without emitting an "error" state transition. */
+  private abortStart(err: Error): void {
+    if (this.startSettled) return;
+    this.startSettled = true;
+    this.clearReadyTimer();
+    this.startReject?.(err);
+  }
+
   /** SIGTERM, escalate to SIGKILL after a grace period. */
   stop(): void {
+    // If a start() is still pending (e.g. stopped during the ready window),
+    // settle it now so its ready timeout cannot later flip "stopped" to "error".
+    this.abortStart(new Error("dsh stopped before ready"));
     if (!this.child || this.child.killed) {
-      this.setState("stopped");
+      if (this._state !== "stopped") this.setState("stopped");
       return;
     }
     this.setState("stopping");

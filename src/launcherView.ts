@@ -5,7 +5,7 @@
 import * as vscode from "vscode";
 import { DshServerManager, type ServerInfo, type ServerState } from "./serverManager.js";
 import { workspaceRoot } from "./commands.js";
-import { t } from "./i18n.js";
+import { t, langCode } from "./i18n.js";
 
 interface LauncherInit {
   state: ServerState;
@@ -33,7 +33,7 @@ function launcherHtml(init: LauncherInit): string {
     : t("launcher.noWorkspace");
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${langCode()}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">

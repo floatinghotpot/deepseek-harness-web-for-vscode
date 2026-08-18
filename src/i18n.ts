@@ -9,3 +9,8 @@ export function t(key: I18nKey, vars?: Record<string, string>): string {
   const text = lang.startsWith("zh") ? row.zh : row.en;
   return vars ? interpolate(text, vars) : text;
 }
+
+/** Current document language code for <html lang=...>. */
+export function langCode(): "zh-CN" | "en" {
+  return vscode.env.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+}

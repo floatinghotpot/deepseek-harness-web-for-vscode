@@ -142,3 +142,18 @@ test("start() rejects with a helpful message when the binary is missing", async 
   );
   assert.equal(manager.state, "error");
 });
+
+test("stop() during the ready window settles the promise and stays stopped (no late error)", async (t) => {
+  const dir = tmpdir(t);
+  const bin = fakeDsh(dir, { quiet: true }); // never prints the ready URL
+  const manager = new DshServerManager();
+  const exited = new Promise((r) => manager.once("exit", r));
+  const startP = manager.start({ dshBin: bin, cwd: dir, readyTimeoutMs: 5000 });
+  manager.stop(); // abort the pending start
+  await assert.rejects(startP, /stopped before ready/);
+  await exited; // wait for the process to actually terminate
+  assert.equal(manager.state, "stopped");
+  // Wait past the ready timeout to ensure it does NOT flip back to "error".
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(manager.state, "stopped");
+});

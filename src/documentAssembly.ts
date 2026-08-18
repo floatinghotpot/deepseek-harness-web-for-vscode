@@ -118,7 +118,8 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
     `<script>window.__DSH_BRIDGE__ = ${JSON.stringify({ serverBase, ...(themeDark !== undefined ? { dark: themeDark } : {}) })}<\/script>` +
     `<script>${bridgeClientJs}<\/script>`;
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${buildCsp(cspSource)}">`;
-  html = html.replace("<head>", `<head>${cspMeta}${bootScript}`);
+  // Attribute-tolerant head injection (DSH's <head> may gain attributes later).
+  html = html.replace(/<head\b[^>]*>/i, (m) => `${m}${cspMeta}${bootScript}`);
   if (chromeHtml) html = html.replace("</body>", `${chromeHtml}</body>`);
 
   return { html, distRev: rev, downloaded };
@@ -141,6 +142,10 @@ async function downloadTree(
     const url = queue.shift()!;
     if (seen.has(url)) continue;
     seen.add(url);
+    if (!url.startsWith("/assets/") || url.includes("..")) {
+      log(`skip suspicious asset url ${url}`);
+      continue;
+    }
     const fsPath = path.join(distRootPath, url);
     fs.mkdirSync(path.dirname(fsPath), { recursive: true });
     const res = await fetchImpl(serverBase + url);
@@ -155,6 +160,7 @@ async function downloadTree(
       let text = buf.toString("utf8");
       let rewritten = false;
       text = text.replace(CSS_URL_RE, (_m, asset: string) => {
+        if (!asset.startsWith("/assets/") || asset.includes("..")) return _m; // leave unsafe refs untouched
         rewritten = true;
         queue.push(asset); // ensure the font/image is downloaded too
         return `url(${asWebviewUri(path.join(distRootPath, asset))})`;

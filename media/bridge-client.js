@@ -222,6 +222,8 @@
         if (!wsClose) break;
         wsClose.readyState = BridgeWebSocket.CLOSED;
         wsClose._fire("close", { code: msg.code, reason: msg.reason });
+        var wsIdx = sockets.indexOf(wsClose);
+        if (wsIdx !== -1) sockets.splice(wsIdx, 1);
         break;
       }
       case "clipboard-res": {

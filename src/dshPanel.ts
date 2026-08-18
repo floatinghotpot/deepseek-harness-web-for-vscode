@@ -7,7 +7,7 @@ import { DshServerManager, type ServerInfo } from "./serverManager.js";
 import { assembleDocument } from "./documentAssembly.js";
 import { BridgeHost } from "./bridgeHost.js";
 import { workspaceRoot } from "./commands.js";
-import { t } from "./i18n.js";
+import { t, langCode } from "./i18n.js";
 
 const DIST_DIR_NAME = "dsh-dist";
 const PANEL_TITLE = "DeepSeek Harness";
@@ -20,7 +20,7 @@ function isDarkTheme(): boolean {
 /** Minimal shell shown before the server is ready (never a blank panel). */
 function placeholderHtml(): string {
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${langCode()}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
