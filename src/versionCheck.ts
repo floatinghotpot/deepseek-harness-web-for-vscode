@@ -1,7 +1,6 @@
 // dsh version soft-check helpers (G-03, 01-workspace-alignment). vscode-free
 // pure functions: semver-with-prerelease comparison, upgrade-command inference
 // from the resolved binary path, and the 24h check-frequency gate.
-import * as path from "node:path";
 
 /**
  * Compare two dsh version strings like "0.1.0-rc.6". Supports optional
@@ -73,15 +72,16 @@ export function isUpdateAvailable(current: string | undefined, latest: string | 
  */
 export function upgradeCommandFor(dshPath: string | undefined): string | null {
   if (!dshPath) return null;
-  const p = path.resolve(dshPath);
-  const rel = (needle: string) => p.includes(needle);
-  if (rel("/_npx/")) return "npx -y @deepseek-ai/dsh@latest --version";
-  if (rel("/.nvm/versions/node/")) return "npm i -g @deepseek-ai/dsh@latest";
-  if (rel("/.npm-global/")) return "npm i -g @deepseek-ai/dsh@latest";
-  if (rel("/homebrew/") || rel("/opt/homebrew/")) return "npm i -g @deepseek-ai/dsh@latest";
-  if (rel("/usr/local/bin/")) return "npm i -g @deepseek-ai/dsh@latest";
+  // Normalize separators to forward slashes so the same feature checks work
+  // on every platform (Windows D:\...\_npx\... -> D:/.../_npx/...).
+  const p = dshPath.replace(/\\/g, "/");
+  if (p.includes("/_npx/")) return "npx -y @deepseek-ai/dsh@latest --version";
+  if (p.includes("/.nvm/versions/node/")) return "npm i -g @deepseek-ai/dsh@latest";
+  if (p.includes("/.npm-global/")) return "npm i -g @deepseek-ai/dsh@latest";
+  if (p.includes("/homebrew/") || p.includes("/opt/homebrew/")) return "npm i -g @deepseek-ai/dsh@latest";
+  if (p.includes("/usr/local/bin/")) return "npm i -g @deepseek-ai/dsh@latest";
   // npm prefix bin (e.g. /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js).
-  if (rel("node_modules/@deepseek-ai/dsh/")) return "npm i -g @deepseek-ai/dsh@latest";
+  if (p.includes("node_modules/@deepseek-ai/dsh/")) return "npm i -g @deepseek-ai/dsh@latest";
   return null;
 }
 

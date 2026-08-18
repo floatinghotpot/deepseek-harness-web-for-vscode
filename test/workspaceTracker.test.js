@@ -21,20 +21,25 @@ test("shouldAutoRestart: false when no record exists (different workspace)", () 
 });
 
 test("normalizePath: resolves and drops trailing separators", () => {
-  const base = path.resolve("/a/b");
-  assert.equal(normalizePath("/a/b"), base);
+  // The expectation is normalizePath itself (idempotent), not raw path.resolve
+  // — on win32 normalizePath lower-cases the drive letter, so a raw resolve
+  // expectation would differ in case (D:\\ vs d:\\).
+  const base = normalizePath("/a/b");
   assert.equal(normalizePath("/a/b/"), base);
   assert.equal(normalizePath("/a/b//"), base);
+  assert.equal(normalizePath("/a/b/."), base);
 });
 
 test("normalizePath: resolves relative paths to the same absolute form", () => {
   const cwd = process.cwd();
-  assert.equal(normalizePath("a/b"), path.resolve(cwd, "a/b"));
-  assert.equal(normalizePath("./a/b"), path.resolve(cwd, "a/b"));
+  const expected = normalizePath(path.resolve(cwd, "a/b"));
+  assert.equal(normalizePath("a/b"), expected);
+  assert.equal(normalizePath("./a/b"), expected);
 });
 
 test("normalizePath: empty string resolves to cwd without throwing", () => {
-  assert.equal(normalizePath(""), path.resolve(""));
+  // Same normalization on both sides (drive-letter case on win32).
+  assert.equal(normalizePath(""), normalizePath(path.resolve("")));
 });
 
 test("normalizePath: win32 lower-cases for drive-letter case (injected platform)", () => {

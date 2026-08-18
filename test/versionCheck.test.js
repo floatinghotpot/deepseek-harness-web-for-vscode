@@ -55,6 +55,17 @@ test("upgradeCommandFor: npx cache path", () => {
   assert.equal(upgradeCommandFor(p), "npx -y @deepseek-ai/dsh@latest --version");
 });
 
+test("upgradeCommandFor: Windows paths (backslash separators)", () => {
+  assert.equal(
+    upgradeCommandFor("C:\\Users\\me\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\.bin\\dsh.cmd"),
+    "npx -y @deepseek-ai/dsh@latest --version"
+  );
+  assert.equal(
+    upgradeCommandFor("C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js"),
+    "npm i -g @deepseek-ai/dsh@latest"
+  );
+});
+
 test("upgradeCommandFor: npm global paths", () => {
   assert.equal(
     upgradeCommandFor("/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"),
