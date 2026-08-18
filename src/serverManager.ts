@@ -283,15 +283,33 @@ export class DshServerManager extends EventEmitter {
       return;
     }
     this.setState("stopping");
-    this.child.kill("SIGTERM");
+    this.terminateChild(this.child);
     this.killTimer = setTimeout(() => {
-      if (this.child && !this.child.killed) this.child.kill("SIGKILL");
+      if (this.child && !this.child.killed) this.terminateChild(this.child);
     }, SIGKILL_GRACE_MS);
     this.killTimer.unref();
   }
 
   private killNow(): void {
-    if (this.child && !this.child.killed) this.child.kill("SIGKILL");
+    if (this.child && !this.child.killed) this.terminateChild(this.child);
+  }
+
+  /**
+   * Terminate the child. POSIX: SIGTERM (dsh handles it gracefully). Windows:
+   * `shell: true` wraps dsh in cmd.exe, which does not forward signals — kill
+   * the whole tree with taskkill /T /F so no orphaned node process leaks and
+   * holds file handles.
+   */
+  private terminateChild(child: ChildProcess): void {
+    if (process.platform === "win32" && child.pid) {
+      try {
+        spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+      } catch {
+        child.kill();
+      }
+    } else {
+      child.kill("SIGTERM");
+    }
   }
 
   private clearReadyTimer(): void {

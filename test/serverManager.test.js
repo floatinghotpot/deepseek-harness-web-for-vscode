@@ -32,7 +32,7 @@ const IS_WIN = process.platform === "win32";
 
 function tmpdir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-sm-"));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
   return dir;
 }
 
@@ -120,18 +120,22 @@ test("start() is idempotent when already ready", async (t) => {
   const url = await manager.start({ dshBin: bin, cwd: dir });
   const again = await manager.start({ dshBin: bin, cwd: dir });
   assert.equal(again, url);
+  const exited = new Promise((r) => manager.once("exit", r));
   manager.stop();
+  await exited;
 });
 
 test("start() rejects on timeout when no URL line arrives", async (t) => {
   const dir = tmpdir(t);
   const bin = fakeDsh(dir, { quiet: true });
   const manager = new DshServerManager();
+  const exited = new Promise((r) => manager.once("exit", r));
   await assert.rejects(
     manager.start({ dshBin: bin, cwd: dir, readyTimeoutMs: 500 }),
     /did not become ready/
   );
   assert.equal(manager.state, "error");
+  await exited;
 });
 
 test("start() rejects with a helpful message when the binary is missing", async (t) => {
