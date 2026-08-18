@@ -22,7 +22,7 @@
 | 静态 `/plugins/<id>/client.js` | **200**（不受围栏影响） | 经典 script 跨源加载插件 bundle 可行 |
 
 ### S3. 默认工作区 = 子进程 cwd（req R4）
-- `host.describe` 返回 `cwd: /Users/liming/workspace/dsh4vscode` —— 与 spawn 的 cwd 一致
+- `host.describe` 返回 `cwd: <workspaceRoot>` —— 与 spawn 的 cwd 一致
 - → **扩展 spawn 时传 `cwd: workspaceFolder` 即实现"当前文件夹为默认工作区"**，无需额外 API
 
 ### S4. 优雅退出与清理（req R3）

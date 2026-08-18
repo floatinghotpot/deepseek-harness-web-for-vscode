@@ -14,7 +14,7 @@
 
 ## 文档产物
 
-`doc/architecture/proposal-by-deepseek.md`、`doc/marketing/market-analysis.md`、`doc/feature/00-dsh-vscode/`（discussion/req/solution/plan/spike-notes/verification/TODO/summary）、`doc/fix/00-vsix-missing-ws/record.md`、`doc/publishing.md`、`Makefile`。
+`doc/architecture/proposal-by-deepseek.md`、`doc/marketing/market-analysis.md`、`doc/feature/00-dsh-vscode/`（discussion/req/solution/plan/spike-notes/verification/TODO/summary）、`doc/fix/20260817-vsix-missing-ws/record.md`、`doc/publishing.md`、`Makefile`。
 
 ## 变更轨迹（git，全部已推送 + tag）
 

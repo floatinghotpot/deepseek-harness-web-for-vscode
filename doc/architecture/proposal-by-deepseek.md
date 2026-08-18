@@ -34,7 +34,7 @@
 ## 2. 事实核查（Facts，全部来自对 DSH 安装包的源码阅读，非臆测）
 
 > 核查基准：`@deepseek-ai/dsh@0.1.0-rc.6`（npx 缓存安装树，根目录
-> `/Users/liming/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/`，下称 `$DSH`）。
+> `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/`，下称 `$DSH`）。
 > 工作区当前为空项目（仅 `CLAUDE.md`、`doc/`、`src/`），无既有代码约束。
 
 ### 2.1 启动方式与命令行
