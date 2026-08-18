@@ -57,6 +57,28 @@ test("resolveDshPath finds dsh in an injected home", (t) => {
   assert.ok(res.tried.every((p) => !p.includes(empty)));
 });
 
+test("resolveDshPath handles Windows layout (npm-cache _npx, dsh.cmd)", (t) => {
+  const home = tmpdir(t);
+  // Windows npx cache: %LocalAppData%\npm-cache\_npx\<hash>\node_modules\.bin\dsh.cmd
+  const npxDir = path.join(home, "AppData", "Local", "npm-cache", "_npx", "winhash", "node_modules", ".bin");
+  fs.mkdirSync(npxDir, { recursive: true });
+  fs.writeFileSync(path.join(npxDir, "dsh.cmd"), "");
+  const res = resolveDshPath(home, "win32");
+  assert.equal(res.path, path.join(npxDir, "dsh.cmd"));
+  // Windows must NOT probe macOS-only paths (homebrew / usr-local).
+  assert.ok(res.tried.every((p) => !p.includes("opt/homebrew")));
+});
+
+test("resolveDshPath finds either dsh or dsh.cmd on Windows when both exist", (t) => {
+  const home = tmpdir(t);
+  const npxDir = path.join(home, "AppData", "Local", "npm-cache", "_npx", "h2", "node_modules", ".bin");
+  fs.mkdirSync(npxDir, { recursive: true });
+  fs.writeFileSync(path.join(npxDir, "dsh"), "");
+  fs.writeFileSync(path.join(npxDir, "dsh.cmd"), "");
+  const res = resolveDshPath(home, "win32");
+  assert.ok(res.path === path.join(npxDir, "dsh") || res.path === path.join(npxDir, "dsh.cmd"));
+});
+
 test("start() reaches ready via stdout URL and stop() exits cleanly", async (t) => {
   const dir = tmpdir(t);
   const bin = fakeDsh(dir);

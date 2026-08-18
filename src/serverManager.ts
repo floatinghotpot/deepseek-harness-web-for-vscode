@@ -69,20 +69,22 @@ function firstExisting(patterns: string[]): string | undefined {
   return undefined;
 }
 
-function npmGlobalBin(): string {
+/** npm global prefix (no `bin` suffix — added per platform by callers). */
+function npmGlobalPrefix(): string {
   try {
     const res = spawnSync("npm", ["prefix", "-g"], { encoding: "utf8" });
-    if (res.status === 0 && res.stdout) return path.join(res.stdout.trim(), "bin");
+    if (res.status === 0 && res.stdout) return res.stdout.trim();
   } catch {
     /* ignore */
   }
-  return "/usr/local";
+  return "";
 }
 
 /** `dsh --version` via the resolved binary, or null when it fails. */
 export function resolveDshVersion(bin: string): string | null {
+  const isWin = process.platform === "win32";
   try {
-    const res = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 5000 });
+    const res = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 5000, shell: isWin });
     if (res.status === 0 && res.stdout) return res.stdout.trim().split("\n")[0];
   } catch {
     /* ignore */
@@ -90,22 +92,47 @@ export function resolveDshVersion(bin: string): string | null {
   return null;
 }
 
+/** Binary suffixes to probe, per platform (Windows npm shims are .cmd). */
+function exeSuffixes(platform: NodeJS.Platform): string[] {
+  return platform === "win32" ? ["", ".cmd"] : [""];
+}
+
+/** Expand one base path into the platform's binary candidates (dsh / dsh.cmd). */
+function exeCandidates(base: string, platform: NodeJS.Platform): string[] {
+  return exeSuffixes(platform).map((s) => base + s).filter(Boolean);
+}
+
 /**
- * Resolve the dsh binary. Order: $DSH_BIN → `npm prefix -g`/bin → common
- * macOS locations → nvm → npx cache. Returns null when nothing is found; the
- * caller then relies on PATH and reports `tried` in the error message.
+ * Resolve the dsh binary. Order: $DSH_BIN → npm global → common locations →
+ * nvm → npx cache. Platform-aware (Windows npm shims live in %AppData%\npm
+ * as `dsh.cmd` and the npx cache under %LocalAppData%\npm-cache). Returns
+ * null when nothing is found; the caller then relies on PATH and reports
+ * `tried` in the error message.
  * @param home - home directory to scan (injectable for tests).
+ * @param platform - target platform (injectable for tests).
  */
-export function resolveDshPath(home: string = os.homedir()): { path: string | null; tried: string[] } {
+export function resolveDshPath(
+  home: string = os.homedir(),
+  platform: NodeJS.Platform = process.platform
+): { path: string | null; tried: string[] } {
+  const isWin = platform === "win32";
+  const prefix = npmGlobalPrefix();
+  const globalDir = isWin ? prefix : prefix ? path.join(prefix, "bin") : "";
+
   const candidates = [
-    process.env.DSH_BIN,
-    path.join(npmGlobalBin(), "dsh"),
-    path.join("/opt/homebrew/bin", "dsh"),
-    path.join("/usr/local/bin", "dsh"),
-    path.join(home, ".npm-global/bin", "dsh"),
-    path.join(home, ".nvm/versions/node/*/bin/dsh"),
-    path.join(home, ".npm/_npx/*/node_modules/.bin/dsh"),
-  ].filter((c): c is string => Boolean(c));
+    ...exeCandidates(process.env.DSH_BIN ?? "", platform),
+    ...(globalDir ? exeCandidates(path.join(globalDir, "dsh"), platform) : []),
+    ...(!isWin ? exeCandidates(path.join("/opt/homebrew/bin", "dsh"), platform) : []),
+    ...(!isWin ? exeCandidates(path.join("/usr/local/bin", "dsh"), platform) : []),
+    ...exeCandidates(path.join(home, ".npm-global/bin", "dsh"), platform),
+    ...(!isWin ? exeCandidates(path.join(home, ".nvm/versions/node/*/bin/dsh"), platform) : []),
+    ...exeCandidates(
+      isWin
+        ? path.join(home, "AppData", "Local", "npm-cache", "_npx", "*", "node_modules", ".bin", "dsh")
+        : path.join(home, ".npm", "_npx", "*", "node_modules", ".bin", "dsh"),
+      platform
+    ),
+  ].filter(Boolean);
   const found = firstExisting(candidates);
   return {
     path: found ?? null,
@@ -175,6 +202,8 @@ export class DshServerManager extends EventEmitter {
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
+      // Windows npm shims are .cmd/.bat — Node needs a shell to run them.
+      shell: process.platform === "win32",
     });
     this.child = child;
 
