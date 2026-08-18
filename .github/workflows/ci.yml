@@ -4,14 +4,32 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # POSIX first: macOS + Ubuntu run concurrently; Windows only starts after
+  # both pass, so a Windows-specific failure never masks the other platforms.
+  test-posix:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci --cache .npm-cache
+      - run: npm test
+      - name: Install dsh and run cross-platform smoke
+        run: |
+          npm i -g @deepseek-ai/dsh
+          node scripts/smoke.js
+
+  test-windows:
+    needs: test-posix
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci --cache .npm-cache

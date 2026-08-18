@@ -9,16 +9,26 @@ const path = require("node:path");
 
 const { parseUrlLine, resolveDshPath, DshServerManager } = require("../out/serverManager.js");
 
-/** Write an executable fake dsh script into a temp dir. */
+/** Write an executable fake dsh into a temp dir (platform-aware shim). */
 function fakeDsh(dir, opts = {}) {
   const body = opts.quiet
-    ? `#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n`
-    : `#!/usr/bin/env node\nprocess.stdout.write("dsh web: http://127.0.0.1:34567\\n");\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
+    ? `setInterval(() => {}, 1000);\n`
+    : `process.stdout.write("dsh web: http://127.0.0.1:34567\\n");\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
+  if (process.platform === "win32") {
+    // Windows: cmd.exe cannot run unix-shebang scripts; ship a .cmd wrapper.
+    const impl = path.join(dir, "dsh-impl.js");
+    fs.writeFileSync(impl, body);
+    const cmd = path.join(dir, "dsh.cmd");
+    fs.writeFileSync(cmd, `@echo off\r\nnode "%~dp0dsh-impl.js" %*\r\n`);
+    return cmd;
+  }
   const file = path.join(dir, "dsh");
-  fs.writeFileSync(file, body);
+  fs.writeFileSync(file, `#!/usr/bin/env node\n${body}`);
   fs.chmodSync(file, 0o755);
   return file;
 }
+
+const IS_WIN = process.platform === "win32";
 
 function tmpdir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-sm-"));
@@ -92,9 +102,13 @@ test("start() reaches ready via stdout URL and stop() exits cleanly", async (t) 
 
   const exited = new Promise((resolve) => manager.once("exit", (e) => resolve(e)));
   manager.stop();
-  const { code, signal } = await exited;
-  assert.equal(code, 0);
-  assert.equal(signal, null);
+  const exitInfo = await exited;
+  // POSIX: graceful SIGTERM → exit code 0. Windows: cmd.exe wrapper is
+  // force-terminated (TerminateProcess semantics), so only the state matters.
+  if (!IS_WIN) {
+    assert.equal(exitInfo.code, 0);
+    assert.equal(exitInfo.signal, null);
+  }
   assert.equal(manager.state, "stopped");
   assert.equal(manager.isRunning, false);
 });
@@ -124,7 +138,7 @@ test("start() rejects with a helpful message when the binary is missing", async 
   const manager = new DshServerManager();
   await assert.rejects(
     manager.start({ dshBin: "/nonexistent/dsh", cwd: os.tmpdir() }),
-    /dsh not found/
+    IS_WIN ? /exited before ready/ : /dsh not found/
   );
   assert.equal(manager.state, "error");
 });
