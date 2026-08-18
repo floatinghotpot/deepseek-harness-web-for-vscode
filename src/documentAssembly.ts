@@ -25,6 +25,10 @@ export interface AssembleOptions {
   cspSource: string;
   /** VS Code dark-mode hint, injected into __DSH_BRIDGE__ for the matchMedia shim. */
   themeDark?: boolean;
+  /** Optional localStorage preset for `dsh.sessions.current` (req R2/T7d):
+   *  written before the DSH module script runs so the frontend selects the
+   *  IDE workspace instead of the "most recently active" one. */
+  sessionPreset?: string;
   /** Extra markup injected before </body> (e.g. the server-status overlay). */
   chromeHtml?: string;
   fetchImpl?: typeof fetch;
@@ -116,6 +120,9 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
 
   const bootScript =
     `<script>window.__DSH_BRIDGE__ = ${JSON.stringify({ serverBase, ...(themeDark !== undefined ? { dark: themeDark } : {}) })}<\/script>` +
+    (opts.sessionPreset
+      ? `<script>try { localStorage.setItem("dsh.sessions.current", ${JSON.stringify(opts.sessionPreset)}); } catch (e) { console.error("[dsh] session preset failed", e); }<\/script>`
+      : "") +
     `<script>${bridgeClientJs}<\/script>`;
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${buildCsp(cspSource)}">`;
   // Attribute-tolerant head injection (DSH's <head> may gain attributes later).

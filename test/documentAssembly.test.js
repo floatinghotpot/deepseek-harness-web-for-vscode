@@ -145,3 +145,42 @@ test("assembleDocument reuses the cache when the rev is unchanged", async (t) =>
   // Second pass only fetched the index page, not the asset tree.
   assert.ok(server.requestCount - countAfterFirst <= 2, `requestCount grew by ${server.requestCount - countAfterFirst}`);
 });
+
+test("assembleDocument injects the session preset before the module script (req R2/T7d)", async (t) => {
+  const server = await serveDist(t);
+  const dist = tmpdir(t);
+  const preset = JSON.stringify({ sessionId: "session-xyz" });
+
+  const { html } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "console.log('bridge');",
+    cspSource: "x",
+    sessionPreset: preset,
+    log: () => {},
+  });
+
+  // The localStorage write must appear BEFORE the DSH module script tag.
+  const injectPos = html.indexOf('localStorage.setItem("dsh.sessions.current"');
+  const modulePos = html.indexOf('type="module"');
+  assert.ok(injectPos !== -1, "session preset script missing");
+  assert.ok(modulePos !== -1, "module script missing");
+  assert.ok(injectPos < modulePos, `preset (${injectPos}) must precede module script (${modulePos})`);
+  // Payload is JSON-embedded exactly.
+  assert.ok(html.includes(`localStorage.setItem("dsh.sessions.current", ${JSON.stringify(preset)})`));
+});
+
+test("assembleDocument omits the preset script when none is provided", async (t) => {
+  const server = await serveDist(t);
+  const dist = tmpdir(t);
+  const { html } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "",
+    cspSource: "x",
+    log: () => {},
+  });
+  assert.ok(!html.includes('dsh.sessions.current'));
+});

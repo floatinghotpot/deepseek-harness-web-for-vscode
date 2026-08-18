@@ -84,6 +84,7 @@ export class DshPanel {
 
   private panel?: vscode.WebviewPanel;
   private bridge?: BridgeHost;
+  private pendingPreset?: string;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -106,8 +107,14 @@ export class DshPanel {
     );
   }
 
-  /** Create the editor tab, or reveal the existing one (re-assembling when ready). */
-  open(): void {
+  /**
+   * Create the editor tab, or reveal the existing one (re-assembling when
+   * ready). `sessionPreset` (optional, req R2/T7d) is the localStorage payload
+   * for `dsh.sessions.current` — written before the DSH module script runs so
+   * the frontend selects the IDE workspace.
+   */
+  open(sessionPreset?: string): void {
+    this.pendingPreset = sessionPreset;
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.Beside);
       if (this.manager.state === "ready") void this.refresh();
@@ -155,6 +162,15 @@ export class DshPanel {
     this.open();
   }
 
+  /**
+   * Close the editor tab (01-workspace-alignment T2, R5 semantics: the DSH
+   * session persists and the server is NOT stopped — onDidDispose clears the
+   * panel/bridge only).
+   */
+  close(): void {
+    this.panel?.dispose();
+  }
+
   private distRootPath(): string {
     return path.join(this.context.globalStorageUri.fsPath, DIST_DIR_NAME);
   }
@@ -175,6 +191,7 @@ export class DshPanel {
         bridgeClientJs: bridgeJs,
         cspSource: webview.cspSource,
         themeDark: isDarkTheme(),
+        sessionPreset: this.pendingPreset,
         chromeHtml: statusChromeHtml(),
         log: (m) => console.log("[dsh] " + m),
       });

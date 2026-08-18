@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { EventEmitter } from "node:events";
+import { normalizePath } from "./workspaceTracker.js";
 
 export type ServerState = "stopped" | "starting" | "ready" | "stopping" | "error";
 
@@ -14,6 +15,8 @@ export interface ServerInfo {
   state: ServerState;
   url?: string;
   message?: string;
+  /** dsh CLI version (resolved at start via `dsh --version`; undefined when unknown). */
+  version?: string;
 }
 
 export interface StartOptions {
@@ -150,6 +153,8 @@ export class DshServerManager extends EventEmitter {
   private child?: ChildProcess;
   private _state: ServerState = "stopped";
   private url?: string;
+  private _version?: string;
+  private _binPath?: string;
   private killTimer?: NodeJS.Timeout;
   private readyTimer?: NodeJS.Timeout;
   private stdoutBuffer = "";
@@ -165,6 +170,16 @@ export class DshServerManager extends EventEmitter {
     return this.url;
   }
 
+  /** dsh CLI version resolved at start (undefined until a start ran / on failure). */
+  get dshVersion(): string | undefined {
+    return this._version;
+  }
+
+  /** Resolved dsh binary path used for the last start (undefined before start). */
+  get dshBinPath(): string | undefined {
+    return this._binPath;
+  }
+
   get isRunning(): boolean {
     return this._state === "ready" || this._state === "starting";
   }
@@ -172,7 +187,7 @@ export class DshServerManager extends EventEmitter {
   private setState(state: ServerState, info: Omit<ServerInfo, "state"> = {}): void {
     this._state = state;
     if (info.url) this.url = info.url;
-    this.emit("state", { state, ...info });
+    this.emit("state", { state, ...info, ...(this._version ? { version: this._version } : {}) });
   }
 
   /** Start `dsh web --port 0`; resolves with the ready URL, rejects on failure/timeout. */
@@ -188,6 +203,8 @@ export class DshServerManager extends EventEmitter {
 
     // Launch diagnostic: which binary, which version.
     const version = resolveDshVersion(bin);
+    this._version = version ?? undefined;
+    this._binPath = bin;
     this.emit("log", `spawning ${bin} (version=${version ?? "?"}, cwd=${cwd}, tried=[${resolved.tried.join(", ")}])`);
 
     this.stdoutBuffer = "";
@@ -271,6 +288,50 @@ export class DshServerManager extends EventEmitter {
     this.startSettled = true;
     this.clearReadyTimer();
     this.startReject?.(err);
+  }
+
+  /**
+   * Ensure the IDE workspace exists as a DSH workspace with at least one
+   * session, and return a sessionId bound to it. Used by the UI-alignment
+   * path (req R2 / T7b): the DSH frontend picks its initial workspace from the
+   * "most recently active" session unless we preset `dsh.sessions.current`,
+   * so we must first guarantee a session exists FOR THIS workspace.
+   *
+   * RPC envelope (spike-verified): POST /api/<method>, payload is the method's
+   * args object directly (e.g. {path} for workspace.create, {workspaceId} for
+   * session.create); response is {type:"server-response", rpcId, result:{ok,
+   * value}} — Node has no browser headers, so the /api trust fence passes.
+   *
+   * NOTE: session.create MUST use workspaceId — the {cwd} form creates a
+   * session whose cwd is right but does NOT attach it to workspace.sessionIds
+   * (spike finding, discussion.md §2.4).
+   */
+  async ensureWorkspaceSession(cwd: string): Promise<string> {
+    const base = this.url;
+    if (!base) throw new Error("dsh is not ready");
+    const api = async (method: string, payload: Record<string, unknown>): Promise<any> => {
+      const res = await fetch(`${base}/api/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "client-request", rpcId: `ws-${Date.now()}`, method, payload }),
+      });
+      const body: any = await res.json();
+      if (!body?.result?.ok) {
+        throw new Error(`${method} failed: ${body?.result?.error?.message ?? "unknown"}`);
+      }
+      return body.result.value;
+    };
+    // 1. Find an existing workspace whose path matches (realpath-normalized).
+    const { items: workspaces } = await api("workspace.list", {});
+    const target = workspaces.find((w: any) => normalizePath(w.path) === normalizePath(cwd));
+    const workspace = target ?? (await api("workspace.create", { path: cwd })).workspace;
+    const { items: sessions } = await api("session.list", {});
+    const bound = sessions.find(
+      (s: any) => workspace.sessionIds.includes(s.sessionId) && s.blank === false
+    );
+    if (bound) return bound.sessionId;
+    // 2. No non-blank session yet — create one bound to this workspace.
+    return (await api("session.create", { workspaceId: workspace.workspaceId })).sessionId;
   }
 
   /** SIGTERM, escalate to SIGKILL after a grace period. */

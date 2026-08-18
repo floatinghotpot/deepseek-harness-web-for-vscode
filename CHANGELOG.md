@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-08-18
+
+### Added
+- **Workspace alignment** — the DSH workspace anchor now follows the IDE workspace (feature M1):
+  - Switching folders closes stale panels and starts cold; reloading the *same* workspace auto-restarts dsh and restores the panel.
+  - The embedded UI shows the **current IDE workspace** (not the most recently active one) via a session preset injected before the DSH frontend boots.
+  - Clicking the activity-bar icon auto-starts dsh when it is not running.
+- **dsh version soft-check + upgrade helper** — the sidebar shows "Update available: x.y.z →" when a newer dsh exists; clicking offers an upgrade command matched to your install method (npx cache / npm global / nvm) in a QuickPick, prefilled into an integrated terminal (never auto-run). Checks are gated to once per 24h and offline-safe.
+- **Sidebar refinements** — full-width buttons (Stop above Open View), two-line status (version + URL), removed the subtitle.
+- UI strings for the new features across all 9 languages.
+
 ## [0.0.10] - 2026-08-17
 
 ### Added

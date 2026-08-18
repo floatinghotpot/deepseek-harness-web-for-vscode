@@ -16,7 +16,7 @@ doc/
 ├── feature/                                 ← 需求驱动的特性流程 + 项目级规划（规划类文档放根，管线类进 NN-feature-name/）
 │   ├── roadmap.md                           ← 项目全景：架构/MVP/功能/非功能，完成 [x] 与待办 [ ] 全列出
 │   ├── TODO.md                              ← 全局待办：跨 feature 优先级（G-01..G-12，P0→P2）+ 剩余问题
-│   └── NN-feature-name/                     ← 特性管线目录（NN = 两位数字编号；当前实例：00-dsh-vscode；下方文件按管线顺序排列）
+│   └── NN-feature-name/                     ← 特性管线目录（NN = 两位数字编号；当前实例：00-dsh-vscode、01-workspace-alignment；下方文件按管线顺序排列）
 │       ├── discussion.md                    ← 头脑风暴/审计事实原始记录；req 成立后只读
 │       ├── req.md                           ← 需求清单 + 验收标准（无实现细节；用户批准）
 │       ├── solution.md                      ← 怎么做：架构、文件变更清单、数据契约（基于代码事实；用户批准）
@@ -48,7 +48,7 @@ doc/
 1. **语言**：全部中文（CLAUDE.md §1）；代码标识符/commit message 保持英文。
 2. **事实优先**：现状/差距类内容必须基于代码与 DSH 协议事实，标注来源（文件:行号），禁止臆测——见 `product-gap.md` 的写法。
 3. **交叉引用代替重复**：同一事实只在归属文档维护一份，其余用相对链接引用（如 `product-strategy.md` §3 结论摘要 → `product-gap.md`；roadmap 细节 → TODO.md）。
-4. **命名**：feature 子目录用 `NN-feature-name`（NN = 两位数字编号，当前实例 `00-dsh-vscode`）；fix 子目录用 `yyyyMMdd-fix-name`（yyyyMMdd = 修复日期，当前实例 `20260817-vsix-missing-ws`、`20260817-cross-platform`）；全局文档用语义名。
+4. **命名**：feature 子目录用 `NN-feature-name`（NN = 两位数字编号，当前实例 `00-dsh-vscode`、`01-workspace-alignment`）；fix 子目录用 `yyyyMMdd-fix-name`（yyyyMMdd = 修复日期，当前实例 `20260817-vsix-missing-ws`、`20260817-cross-platform`）；全局文档用语义名。
 5. **状态标注**：每份文档头部带 `**日期**` 与 `**状态**`（待评审/已批准等），便于追溯决策时点。
 6. **职责分离**：架构提案进 `architecture/`，需求驱动的特性流程进 `feature/`，简单缺陷修复只进 daily——不要混放。
 

@@ -7,7 +7,7 @@
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-latest-blue)](https://marketplace.visualstudio.com/items?itemName=floatinghotpot.deepseek-harness-web-for-vscode)
 
-Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigravity, the VS Code fork) — so you can run DSH agents and edit code in one window, sharing the same instance as your browser.
+Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigravity, the VS Code fork) — so you can run DSH Agents and edit code in one window, sharing the same instance as your browser.
 
 ## Screenshot / 截图
 
@@ -15,12 +15,15 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 
 ## Features
 
-- **Stay in your editor** — use DeepSeek Harness and write code in the same window, in **VS Code or Antigravity**; no more switching between the IDE and a browser tab to watch the agent work.
-- **Bring your own LLMs** — configure DeepSeek, Claude, Gemini, or any OpenAI-compatible API in DSH settings and switch per session; run several sessions side by side (e.g., the same task in two models) to cross-review answers and cover each model's blind spots.
+- **Stay in your editor** — use DeepSeek Harness and write code in the same window, in **VS Code or Antigravity**; no more switching between the IDE and a browser tab to watch the Agent work.
+- **One of your Agent stack** — VS Code / Antigravity let you install multiple coding-agent extensions, each powered by its own LLM (e.g. Claude Code, ChatGPT, …), and this extension is one of them: a DeepSeek Harness Agent that works side by side with the others. Run several Agents on the same task at the same time to cross-review answers and cover each model's blind spots.
 - **One-click start / stop** — the extension manages a `dsh web` child process with an OS-assigned port. Entry points: activity-bar icon (sidebar launcher), status-bar button, or Command Palette.
 - **Embedded Web UI in an editor tab** — the full DSH frontend (conversations, workspaces, settings, plugins, Goals, Workflows) renders as a regular editor tab, side by side with your files — it never overlaps the explorer tree.
 - **Works with the browser instance** — uses your `~/.dsh` by default, so sessions and settings are shared with the browser UI.
 - **Current folder as workspace** — the DSH default project directory is the folder you have open.
+- **Workspace alignment** — the DSH workspace anchor follows your IDE workspace: switching folders closes stale panels and starts cold, reloading the same workspace auto-restarts the server and restores the panel, and the embedded UI always shows the *current* folder (not the most recently active one).
+- **Auto-start from the icon** — clicking the activity-bar icon starts dsh for you when it is not running.
+- **dsh version check + easy upgrade** — the launcher shows "Update available: x.y.z →" when a newer dsh exists; one click offers the right upgrade command for your install method (npx / npm global / nvm) prefilled into a terminal (24h check gate, offline-safe).
 - **Clipboard works** — copy/paste in the embedded UI goes through a transport bridge (VS Code webviews block clipboard inside iframes; the bridge routes it via `vscode.env.clipboard`).
 - **Theme follows VS Code** — the embedded UI follows your editor color theme (dark/light), live on switch (`deepseekHarness.themeSync`, default `follow`).
 - **Cross-platform** — macOS, Linux and Windows, verified end-to-end by CI (unit tests + a real `dsh` spawn smoke test on all three).
@@ -34,14 +37,14 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 
 ## Install
 
-- **VS Code**: [Visual Studio Marketplace](https://marketplace.visualstudio.com/) → search *DeepSeek Harness for VS Code*
+- **VS Code**: [Visual Studio Marketplace](https://marketplace.visualstudio.com/) → search *DeepSeek Harness Web for VS Code*
 - **Antigravity / Open VSX**: [Open VSX](https://open-vsx.org/) → same name
 
 ## Usage
 
-1. Click the **DeepSeek Harness** icon in the activity bar → the launcher sidebar shows the server status.
-2. Click **启动 DeepSeek Harness** (or the status-bar button, or `DeepSeek Harness: Start` from the Command Palette).
-3. The DSH UI opens in an **editor tab** once the server is ready (`dsh web: http://127.0.0.1:<port>`).
+1. Click the **DeepSeek Harness** icon in the activity bar → dsh starts automatically (if not running) and the launcher sidebar shows the server status, version and URL.
+2. The DSH UI opens in an **editor tab** once the server is ready (`dsh web: http://127.0.0.1:<port>`).
+3. When the server is ready, the launcher offers **Stop DeepSeek Harness** and **Open View** (full-width buttons); click **Update available: x.y.z →** to upgrade dsh.
 
 To make DSH use your project as its default workspace, open that folder in the window first (the launcher footer shows the active workspace).
 

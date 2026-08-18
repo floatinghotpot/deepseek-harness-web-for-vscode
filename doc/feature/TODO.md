@@ -8,9 +8,9 @@
 
 | # | 项 | 目的/价值 | 成本 | 状态 |
 |---|---|---|---|---|
-| G-01 | **T13 共享实例探测（cwd-aware attach）** | 用户已跑 `dsh web`（如 3080）且 cwd 匹配时挂接，不重复起进程；VS Code/Antigravity 双开多项目时按工作区各自独立 | 中（~1 天） | 设计已细化（见 00-dsh-vscode/discussion.md） |
-| G-02 | **工作区切换联动**（新） | 用户切换文件夹时提示是否切换 DSH 工作区（A 提示确认 / B 手动命令 `DSH: 使用当前文件夹`），不静默改 cwd | 中（~0.5 天） | 待排期 |
-| G-03 | **T16 dsh 版本软校验** | 检测到旧版 dsh 时 UI 警告（建议 ≥0.1.0-rc.6），避免"解析到旧版"类问题；不做内置固化 | 低 | 待排期 |
+| G-01 | **T13 共享实例探测（cwd-aware attach，轻量版）** | 用户已手动跑 `dsh web`（如 3080）且 cwd 匹配时扩展挂接/提示，不重复起进程——**不做共享 dsh 服务**（已决策：每 IDE 各管各的 dsh，多 IDE 同工作区为已知限制） | 低（~0.5 天） | 待排期 |
+| G-02 | **工作区切换联动 + UI 对齐** | DSH workspace 锚点随 IDE 切换（会话级切换、不杀进程、reload 自动恢复、面板显示 IDE 工作区）——**feature 01 已完成** ✅ | 中（~0.5 天） | ✅ 完成（01-workspace-alignment/verification.md） |
+| G-03 | **T16 dsh 版本软校验 + 升级辅助** | 检测到旧版 dsh 时 UI 警告 + 按安装方式推荐升级命令（npx/npm 全局/nvm）；24h 门防打扰、集成终端预填不自动执行 | 低 | ✅ 完成（随 feature 01，versionCheck.ts/service） |
 
 ### P1 — 中期
 
@@ -19,6 +19,7 @@
 | G-04 | **GitHub Actions 自动双发工作流** | tag 触发自动发布 Marketplace + Open VSX（模板在 doc/publishing.md） | 低（~0.5 天） | 待排期 |
 | G-05 | **T17 settings 镜像 / 上游 isLoopback** | 让嵌入式页面同步 host 设置（locale 等）；主题已由 matchMedia shim 覆盖 | 低（提上游 issue）/ 高（本地实现） | **优先提上游 issue**，本地不做 |
 | G-06 | **README/详情页同步** | 详情页 README 快照随发版更新；多语言 README 门（9 语言壳层已就绪） | 低 | 随发版自动 |
+| G-12 | **会话管理器侧边栏 + 多面板多会话** | 会话列表镜像 + `＋新建会话` 开新面板绑新会话（localStorage 预置）——**feature 02（02-session-management）**，复杂度高 | 高（~2-3 天） | 推迟至 M2（roadmap M2） |
 
 ### P2 — 低优先 / 观察
 

@@ -7,7 +7,7 @@
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-latest-blue)](https://marketplace.visualstudio.com/items?itemName=floatinghotpot.deepseek-harness-web-for-vscode)
 
-一键启动 **DeepSeek Harness**，把它的完整 Web UI 内嵌进 VS Code（及兼容 fork 的 Antigravity IDE）——在同一个窗口里跑 DSH agent、写代码，与浏览器打开的实例**共享同一份状态**。
+一键启动 **DeepSeek Harness**，把它的完整 Web UI 内嵌进 VS Code（及兼容 fork 的 Antigravity IDE）——在同一个窗口里跑 DSH Agent、写代码，与浏览器打开的实例**共享同一份状态**。
 
 ## Screenshot / 截图
 
@@ -15,12 +15,15 @@
 
 ## 功能
 
-- **在编辑器里完成一切**：在 **VS Code 或 Antigravity** 中边写代码边用 DeepSeek Harness，无需在 IDE 与浏览器标签页之间来回切换就能看到 agent 工作。
-- **多模型并用**：在 DSH 设置里配置 **DeepSeek / Claude / Gemini / 任意 OpenAI 兼容 API**，按会话切换模型；并行开多个会话（如两个模型跑同一任务）交叉评审，规避单一模型的短板。
+- **在编辑器里完成一切**：在 **VS Code 或 Antigravity** 中边写代码边用 DeepSeek Harness，无需在 IDE 与浏览器标签页之间来回切换就能看到 Agent 工作。
+- **Agent 生态中的一员**：VS Code / Antigravity 可安装多个 coding agent 扩展，各自由不同 LLM 驱动（如 Claude Code、ChatGPT…）；本扩展就是其中之一——**DeepSeek Harness Agent**，与其它 Agent 在同一 IDE 里并存，可让多个 Agent 同时跑同一任务、**交叉评审，规避单一 LLM 的短板**。
 - **一键启动 / 停止**：扩展托管 `dsh web` 子进程（端口自动分配）。入口：活动栏 DSH 图标（侧边栏启动器）、状态栏按钮、命令面板。
 - **编辑器标签页内嵌 Web UI**：完整 DSH 前端（会话、工作区、设置、插件、Goal、Workflow）以常规编辑器标签页呈现，与文件编辑并存——**永不遮挡资源管理器树**。
 - **与浏览器共享实例**：默认使用你的 `~/.dsh`，会话与设置和浏览器 UI 互通。
 - **当前文件夹即工作区**：DSH 默认项目目录 = 你打开的文件夹。
+- **工作区对齐**：DSH 的 workspace 锚点跟随 IDE 工作区——切换文件夹关闭旧面板、冷启动；重载同一工作区自动重启服务并恢复面板；内嵌 UI 始终显示**当前文件夹**（而非最近活跃的那个）。
+- **点图标自动启动**：点击活动栏图标，dsh 未运行时自动启动。
+- **dsh 版本检查 + 一键升级**：启动器显示 "有新版本：x.y.z →"（有新版时，文案随界面语言本地化）；点击后按你的安装方式（npx / npm 全局 / nvm）给出对应升级命令，预填进终端（24 小时检查门、离线静默）。
 - **剪贴板可用**：内嵌 UI 的复制/粘贴走传输桥（VS Code webview 会屏蔽 iframe 内的剪贴板；桥通过 `vscode.env.clipboard` 转发）。
 - **主题跟随 VS Code**：内嵌 UI 跟随编辑器颜色主题（深/浅），切换即时生效（`deepseekHarness.themeSync`，默认 `follow`）。
 - **跨平台**：macOS / Linux / Windows 三平台，由 CI 端到端验证（单测 + 真实 `dsh` 冒烟）。
@@ -34,14 +37,14 @@
 
 ## 安装
 
-- **VS Code**：[Visual Studio Marketplace](https://marketplace.visualstudio.com/) 搜索 *DeepSeek Harness for VS Code*
+- **VS Code**：[Visual Studio Marketplace](https://marketplace.visualstudio.com/) 搜索 *DeepSeek Harness Web for VS Code*
 - **Antigravity / Open VSX**：[Open VSX](https://open-vsx.org/) 同名
 
 ## 使用
 
-1. 点击活动栏 **DeepSeek Harness** 图标 → 侧边栏启动器显示服务状态。
-2. 点击 **启动 DeepSeek Harness**（或状态栏按钮，或命令面板 `DeepSeek Harness: 启动`）。
-3. 服务就绪后（`dsh web: http://127.0.0.1:<端口>`），DSH UI 在**编辑器标签页**打开。
+1. 点击活动栏 **DeepSeek Harness** 图标 → dsh 自动启动（若未运行），侧边栏显示服务状态、版本与 URL。
+2. 服务就绪后（`dsh web: http://127.0.0.1:<端口>`），DSH UI 在**编辑器标签页**打开。
+3. 就绪后启动器提供 **Stop DeepSeek Harness** 与 **Open View**（全宽按钮）；点 **有新版本：x.y.z →**（随界面语言本地化）可升级 dsh。
 
 想让 DSH 以你的项目为默认工作区，先在窗口里打开该文件夹（启动器底部会显示当前工作区）。
 
