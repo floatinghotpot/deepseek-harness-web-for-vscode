@@ -50,18 +50,18 @@ test("resolveDshPath finds dsh in an injected home", (t) => {
   const npxDir = path.join(home, ".npm", "_npx", "abc123", "node_modules", ".bin");
   fs.mkdirSync(npxDir, { recursive: true });
   fs.writeFileSync(path.join(npxDir, "dsh"), "");
-  assert.equal(resolveDshPath(home).path, path.join(npxDir, "dsh"));
+  assert.equal(resolveDshPath(home, "linux").path, path.join(npxDir, "dsh"));
 
   // Case 2: npm-global bin wins over npx cache (earlier in the order).
   const globalDir = path.join(home, ".npm-global", "bin");
   fs.mkdirSync(globalDir, { recursive: true });
   fs.writeFileSync(path.join(globalDir, "dsh"), "");
-  assert.equal(resolveDshPath(home).path, path.join(globalDir, "dsh"));
+  assert.equal(resolveDshPath(home, "linux").path, path.join(globalDir, "dsh"));
 
   // Case 3: nothing found → null; home-derived tried entries are "~"-redacted
   // (machine-level candidates like npm prefix -g stay absolute).
   const empty = tmpdir(t);
-  const res = resolveDshPath(empty);
+  const res = resolveDshPath(empty, "linux");
   assert.equal(res.path, null);
   assert.ok(res.tried.some((p) => p.startsWith("~")));
   assert.ok(res.tried.every((p) => !p.includes(empty)));

@@ -97,9 +97,9 @@ test("assembleDocument downloads the tree and rewrites the document", async (t) 
   assert.equal(distRev, "rev123");
 
   // 2. /assets refs rewritten to local webview URIs (src and href, module script).
-  assert.ok(html.includes('src="vscode-webview-resource://test' + dist + "/assets/index-a1b2.js\""));
-  assert.ok(html.includes('href="vscode-webview-resource://test' + dist + "/assets/vendor-c3d4.js\""));
-  assert.ok(html.includes('href="vscode-webview-resource://test' + dist + "/assets/app-e5f6.css\""));
+  assert.ok(html.includes('src="vscode-webview-resource://test' + path.join(dist, "assets", "index-a1b2.js") + '"'));
+  assert.ok(html.includes('href="vscode-webview-resource://test' + path.join(dist, "assets", "vendor-c3d4.js") + '"'));
+  assert.ok(html.includes('href="vscode-webview-resource://test' + path.join(dist, "assets", "app-e5f6.css") + '"'));
 
   // 3. plugin bundle url is absolute against the server.
   assert.ok(html.includes(`"url":"${server.url}/plugins/p1/client.js?rev=1"`));
@@ -116,7 +116,7 @@ test("assembleDocument downloads the tree and rewrites the document", async (t) 
 
   // 6. CSS was rewritten to reference the local font.
   const css = fs.readFileSync(path.join(dist, "assets/app-e5f6.css"), "utf8");
-  assert.ok(css.includes(`url(vscode-webview-resource://test${dist}/assets/fonts/ka.woff2)`));
+  assert.ok(css.includes(`url(vscode-webview-resource://test${path.join(dist, "assets", "fonts", "ka.woff2")})`));
 });
 
 test("assembleDocument reuses the cache when the rev is unchanged", async (t) => {
