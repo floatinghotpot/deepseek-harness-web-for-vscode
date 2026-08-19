@@ -2,10 +2,12 @@
 
 [English](README.md) | **中文**
 
+[![License](https://img.shields.io/github/license/floatinghotpot/deepseek-harness-web-for-vscode)](LICENSE)
 [![CI](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/actions)
+[![GitHub Release](https://img.shields.io/github/v/release/floatinghotpot/deepseek-harness-web-for-vscode)](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/releases/latest)
 [![Open VSX Version](https://img.shields.io/open-vsx/v/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
-[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-latest-blue)](https://marketplace.visualstudio.com/items?itemName=floatinghotpot.deepseek-harness-web-for-vscode)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
 
 一键启动 **DeepSeek Harness**，把它的完整 Web UI 内嵌进 VS Code（及兼容 fork 的 Antigravity IDE）——在同一个窗口里跑 DSH Agent、写代码，与浏览器打开的实例**共享同一份状态**。
 
