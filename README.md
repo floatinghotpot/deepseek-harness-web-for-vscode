@@ -74,7 +74,7 @@ The extension spawns `dsh web --port 0`, serves the DSH frontend as same-origin 
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md) / [CHANGELOG.zh.md](CHANGELOG.zh.md).
 ## License
 
 MIT — see [LICENSE](LICENSE). Copyright © 2026 Liming Xie.

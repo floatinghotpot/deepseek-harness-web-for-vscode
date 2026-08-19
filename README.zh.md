@@ -74,7 +74,7 @@ npm run package     # vsce package -> vsix
 
 ## 变更日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。
+见 [CHANGELOG.md](CHANGELOG.md) / [CHANGELOG.zh.md](CHANGELOG.zh.md)。
 ## License
 
 MIT — 见 [LICENSE](LICENSE)。Copyright © 2026 Liming Xie。

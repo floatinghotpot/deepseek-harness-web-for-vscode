@@ -27,7 +27,8 @@
     "README.zh.md",
     "media/icon.png",
     "node_modules/ws/**",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "CHANGELOG.zh.md"
   ],
   "contributes": {
     "commands": [

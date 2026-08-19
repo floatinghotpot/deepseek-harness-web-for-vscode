@@ -1,0 +1,78 @@
+# 更新日志
+
+[English](CHANGELOG.md) | **中文**
+
+本文件记录项目的所有重要变更。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
+版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
+
+## [0.1.0] - 2026-08-18
+
+### 新增
+- **工作区对齐** —— DSH workspace 锚点现在跟随 IDE 工作区（feature M1）：
+  - 切换文件夹会关闭过期面板并冷启动；重载*同一*工作区会自动重启 dsh 并恢复面板。
+  - 嵌入式 UI 显示**当前 IDE 工作区**（而非最近活跃的一个），通过在 DSH 前端启动前注入的会话预置实现。
+  - 点击活动栏图标会在 dsh 未运行时自动启动。
+- **dsh 版本软校验 + 升级辅助** —— 检测到更新的 dsh 时，侧边栏显示 "Update available: x.y.z →"；点击后按安装方式（npx 缓存 / npm 全局 / nvm）给出匹配的升级命令，在 QuickPick 中选择后预填到集成终端（绝不自动运行）。检查每 24 小时限一次，且离线安全。
+- **侧边栏精炼** —— 全宽按钮（Stop 在 Open View 上方）、两行状态（版本 + URL）、移除副标题。
+- 新功能的 UI 文案覆盖全部 9 种语言。
+
+## [0.0.10] - 2026-08-17
+
+### 新增
+- 扩展 UI 翻译：日语、韩语、俄语、西班牙语、葡萄牙语、法语、德语（共 9 种语言；跟随 VS Code 显示语言）。
+
+## [0.0.9] - 2026-08-17
+
+### 修复
+- 跨平台 dsh 进程终止：在 Windows 上终止完整进程树（`taskkill /T /F`），使 `cmd.exe` 包装层不再遗留孤立的 `node` 子进程。
+- 单测可移植性：平台无关的路径断言和 Windows 兼容的假 `dsh` shim。
+
+### 变更
+- CI 冒烟测试步骤现在有 15 分钟超时。
+
+## [0.0.8] - 2026-08-17
+
+### 新增
+- 跨平台 CI 矩阵（macOS、Ubuntu、Windows），含真实 `dsh` spawn 冒烟测试。
+- README 徽章（CI、Open VSX 版本/下载量、Marketplace 链接）。
+
+### 修复
+- Windows 二进制解析（`dsh.cmd`、`%LocalAppData%\npm-cache` 布局）与 `shell: true` spawn。
+
+## [0.0.7] - 2026-08-17
+
+### 变更
+- `repository` 指向改名后的 GitHub 仓库。
+
+## [0.0.6] - 2026-08-17
+
+### 变更
+- 展示名改为 "DeepSeek Harness Web for VS Code"（VS Code Marketplace 展示名全局唯一）。
+
+## [0.0.5] - 2026-08-17
+
+### 变更
+- 扩展 ID 改为 `deepseek-harness-web-for-vscode`（VS Code Marketplace 扩展名全局唯一）。
+
+## [0.0.4] - 2026-08-17
+
+### 新增
+- 编辑器标签页 webview 上的 DeepSeek 标签图标。
+
+## [0.0.3] - 2026-08-17
+
+### 新增
+- 中央双语（en/zh）字符串表；UI 跟随 VS Code 语言。
+- 纯英文的 Marketplace 描述。
+
+## [0.0.2] - 2026-08-17
+
+### 修复
+- 将运行时 `ws` 依赖打包进 vsix（没有它时新安装激活即崩溃）。
+
+## [0.0.1] - 2026-08-17
+
+### 新增
+- 初始 MVP：spawn `dsh web`、传输桥（fetch/WebSocket/剪贴板）、编辑器标签页 webview、侧边栏启动器、状态栏、主题跟随和打包。
