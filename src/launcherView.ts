@@ -6,7 +6,19 @@ import * as vscode from "vscode";
 import { DshServerManager, type ServerInfo, type ServerState } from "./serverManager.js";
 import { workspaceRoot } from "./commands.js";
 import { t, langCode } from "./i18n.js";
+import { sessionTitleOf } from "./workspaceTracker.js";
 import { upgradeInfo } from "./versionCheckService.js";
+
+/** Session-list polling interval while the launcher is visible and ready. */
+const SESSIONS_POLL_MS = 5_000;
+
+/** Callbacks wired by extension.ts to the session panel manager. */
+export interface SessionHandlers {
+  newSession: () => void;
+  openSession: (sessionId: string) => void;
+  renameSession: (sessionId: string, title: string) => Promise<void>;
+  archiveSession: (sessionId: string) => void;
+}
 
 interface LauncherInit {
   state: ServerState;
@@ -103,6 +115,22 @@ button.upgrade {
 }
 button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.1)); }
 .footer { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border)); font-size: 11.5px; color: var(--vscode-descriptionForeground); word-break: break-all; }
+.sessions { display: flex; flex-direction: column; gap: 8px; }
+.sessions-title { font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .5px; }
+.sessions-new { font-size: 12px; }
+.sessions-list { display: flex; flex-direction: column; gap: 2px; width: 100%; box-sizing: border-box; min-width: 0; }
+.session-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 4px; font-size: 12.5px; cursor: pointer; width: 100%; box-sizing: border-box; min-width: 0; }
+.session-item:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.1)); }
+.s-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--vscode-charts-green, #3fb950); }
+.s-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-time { font-size: 11px; color: var(--vscode-descriptionForeground); flex: 0 0 auto; white-space: nowrap; }
+.s-actions { margin-left: auto; display: flex; gap: 6px; flex: 0 0 auto; align-items: center; padding-left: 12px; padding-right: 34px; }
+.session-item .icon-btn { background: none; border: none; padding: 3px 5px; border-radius: 3px; color: var(--vscode-descriptionForeground); font-size: 13px; cursor: pointer; flex: 0 0 auto; line-height: 1.2; }
+.session-item .icon-btn:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.15)); color: var(--vscode-foreground); }
+.session-item .icon-btn.hidden { display: none; }
+.session-rename-input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder)); border-radius: 3px; padding: 2px 6px; }
+.sessions-empty, .sessions-error, .sessions-archived { font-size: 11.5px; color: var(--vscode-descriptionForeground); padding: 2px 6px; }
+.sessions-archived { border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border)); margin-top: 4px; padding-top: 6px; }
 </style>
 </head>
 <body>
@@ -127,8 +155,13 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
     <button class="primary" id="start" style="display:${showStart ? "block" : "none"}">${t("button.start")}</button>
     <div class="row" id="readyActions" style="display:${showReady ? "flex" : "none"}">
       <button class="secondary" id="stop">${t("button.stop")}</button>
-      <button class="secondary" id="openPanel">${t("button.openPanel")}</button>
     </div>
+  </div>
+
+  <div class="sessions">
+    <button class="secondary sessions-new" id="newSession" style="display:none">${t("sessions.new")}</button>
+    <span class="sessions-title">${t("sessions.title")}</span>
+    <div id="sessionsList" class="sessions-list"></div>
   </div>
 
   <div class="footer" id="footer">${workspaceText}</div>
@@ -139,15 +172,160 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
   var status = document.getElementById("status");
   var start = document.getElementById("start");
   var ready = document.getElementById("readyActions");
-  var openPanel = document.getElementById("openPanel");
   var stop = document.getElementById("stop");
   var footer = document.getElementById("footer");
   var statusUrl = document.getElementById("statusUrl");
   var upgrade = document.getElementById("upgrade");
+  var newSession = document.getElementById("newSession");
+  var sessionsList = document.getElementById("sessionsList");
+  var archExpanded = false; // survives the 5s poll re-render (archive section)
   start.onclick = function(){ vscode.postMessage({ type: "start" }); };
-  openPanel.onclick = function(){ vscode.postMessage({ type: "openPanel" }); };
   stop.onclick = function(){ vscode.postMessage({ type: "stop" }); };
   upgrade.onclick = function(){ vscode.postMessage({ type: "upgrade" }); };
+  newSession.onclick = function(){ vscode.postMessage({ type: "new-session" }); };
+  function renderSessions(items, archivedItems) {
+    sessionsList.textContent = "";
+    if (!items || items.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "sessions-empty";
+      empty.textContent = ${JSON.stringify(t("sessions.empty"))};
+      sessionsList.appendChild(empty);
+    } else {
+      items.forEach(function (it) {
+        // Gemini analysis (doc/fix/20260819-session-x-offset): the global
+        // "button { width:100%; padding:7px 16px }" rule polluted BOTH session
+        // buttons (only padding was overridden by .icon-btn, never width), so
+        // each button was 100% wide — the flex row overflowed and the last
+        // button (✕) was pushed outside the visible area. Fix: buttons get
+        // EXPLICIT inline 20x20 + padding:0 (immune to the global rule), the
+        // actions group is absolutely anchored inside the row's right edge,
+        // and the row reserves padding-right so the title never overlaps.
+        var row = document.createElement("div");
+        row.className = "session-item";
+        row.style.cssText =
+          "position:relative;display:flex;align-items:center;gap:6px;width:100%;height:28px;" +
+          "padding:0 86px 0 6px;box-sizing:border-box;cursor:pointer;border-radius:4px;overflow:hidden;";
+        var dot = document.createElement("span");
+        dot.style.cssText = "width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--vscode-charts-green,#3fb950);display:inline-block;";
+        var name = document.createElement("span");
+        name.style.cssText =
+          "flex:1 1 0%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;line-height:28px;";
+        name.textContent = it.title;
+        var tm = document.createElement("span");
+        tm.style.cssText = "font-size:11px;color:var(--vscode-descriptionForeground);flex:0 0 auto;white-space:nowrap;margin-right:2px;";
+        tm.textContent = relativeTime(it.updatedAt);
+        tm.title = it.updatedAt ? new Date(it.updatedAt).toLocaleString() : "";
+        // Explicit button style: width/height/min/max all pinned to 20px so
+        // the global "button { width:100%; padding:7px 16px }" rule cannot apply.
+        var btnStyle =
+          "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;" +
+          "min-width:20px;max-width:20px;padding:0;margin:0;border:none;background:transparent;" +
+          "color:var(--vscode-descriptionForeground);cursor:pointer;border-radius:3px;box-sizing:border-box;flex:0 0 auto;";
+        var rn = document.createElement("button");
+        rn.className = "icon-btn";
+        rn.style.cssText = btnStyle;
+        // Inline SVG (codicon edit) — font-independent.
+        rn.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.23 7.63 8.37 2.77a.75.75 0 0 0-1.06 0L2.77 7.31a.75.75 0 0 0-.22.53v2.66a.75.75 0 0 0 .75.75h2.66a.75.75 0 0 0 .53-.22l4.54-4.54a.75.75 0 0 0 0-1.06zM8 8.44 6.56 7l2.66-2.66L11 5.78 8 8.44zM2 13.75h7a.75.75 0 0 1 0 1.5H2a.75.75 0 0 1 0-1.5z"/></svg>';
+        rn.setAttribute("aria-label", ${JSON.stringify(t("sessions.rename"))});
+        rn.onclick = function (ev) { ev.stopPropagation(); startRename(row, rn, name, it); };
+        var ar = document.createElement("button");
+        ar.className = "icon-btn";
+        ar.style.cssText = btnStyle + "font-size:13px;line-height:1;";
+        ar.textContent = "✕";
+        ar.setAttribute("aria-label", ${JSON.stringify(t("sessions.archive"))});
+        ar.onclick = function (ev) { ev.stopPropagation(); vscode.postMessage({ type: "archive-session", sessionId: it.sessionId }); };
+        var acts = document.createElement("div");
+        acts.style.cssText =
+          "position:absolute;right:4px;top:0;bottom:0;display:flex;align-items:center;gap:8px;background:inherit;";
+        acts.appendChild(tm);
+        acts.appendChild(rn);
+        acts.appendChild(ar);
+        row.appendChild(dot);
+        row.appendChild(name);
+        row.appendChild(acts);
+        row.onclick = function () { vscode.postMessage({ type: "open-session", sessionId: it.sessionId }); };
+        sessionsList.appendChild(row);
+      });
+    }
+    if (archivedItems && archivedItems.length > 0) {
+      var archTitle = ${JSON.stringify(t("sessions.archived"))};
+      var archHeader = document.createElement("div");
+      archHeader.style.cssText = "border-top:1px solid var(--vscode-panel-border,var(--vscode-widget-border));margin-top:4px;padding:6px 6px 2px;font-size:11.5px;color:var(--vscode-descriptionForeground);cursor:pointer;display:flex;align-items:center;gap:4px;";
+      var archArrow = document.createElement("span");
+      archArrow.style.cssText = "font-size:9px;flex:none;";
+      archArrow.textContent = archExpanded ? "▾" : "▸";
+      var archLabel = document.createElement("span");
+      archLabel.style.cssText = "flex:1;";
+      archLabel.textContent = archTitle + " (" + archivedItems.length + ")";
+      archHeader.appendChild(archArrow);
+      archHeader.appendChild(archLabel);
+      archHeader.onclick = function () {
+        archExpanded = !archExpanded;
+        archList.style.display = archExpanded ? "block" : "none";
+        archArrow.textContent = archExpanded ? "▾" : "▸";
+      };
+      var archList = document.createElement("div");
+      archList.style.cssText = "flex-direction:column;gap:2px;margin-top:2px;display:" + (archExpanded ? "block" : "none") + ";";
+      archivedItems.forEach(function (a) {
+        var arow = document.createElement("div");
+        arow.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 6px;border-radius:4px;font-size:12px;color:var(--vscode-descriptionForeground);";
+        var adot = document.createElement("span");
+        adot.style.cssText = "width:7px;height:7px;border-radius:50%;flex:none;background:var(--vscode-descriptionForeground,#8b949e);";
+        var aname = document.createElement("span");
+        aname.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        aname.textContent = a.title;
+        var atime = document.createElement("span");
+        atime.style.cssText = "font-size:11px;flex:none;white-space:nowrap;";
+        atime.textContent = relativeTime(a.updatedAt);
+        arow.appendChild(adot);
+        arow.appendChild(aname);
+        arow.appendChild(atime);
+        archList.appendChild(arow);
+      });
+      sessionsList.appendChild(archHeader);
+      sessionsList.appendChild(archList);
+    }
+  }
+  function relativeTime(ts) {
+    if (!ts) return "";
+    var MIN = 60000, HOUR = 3600000, DAY = 86400000;
+    var diff = Math.max(0, Date.now() - ts);
+    if (diff < MIN) return ${JSON.stringify(t("sessions.timeNow"))};
+    if (diff < HOUR) return Math.floor(diff / MIN) + "m";
+    if (diff < DAY) return Math.floor(diff / HOUR) + "h";
+    if (diff < 30 * DAY) return Math.floor(diff / DAY) + "d";
+    if (diff < 365 * DAY) return Math.floor(diff / (30 * DAY)) + "mo";
+    return Math.floor(diff / (365 * DAY)) + "y";
+  }
+  function startRename(row, rn, name, it) {
+    var input = document.createElement("input");
+    input.className = "session-rename-input";
+    input.value = it.title;
+    input.setAttribute("placeholder", ${JSON.stringify(t("sessions.renamePlaceholder"))});
+    row.replaceChild(input, name);
+    input.focus();
+    input.select();
+    var done = false;
+    function commit() {
+      if (done) return;
+      done = true;
+      var v = input.value.trim();
+      if (v && v !== it.title) {
+        vscode.postMessage({ type: "rename-session", sessionId: it.sessionId, title: v });
+      }
+      row.replaceChild(name, input);
+    }
+    function cancel() {
+      if (done) return;
+      done = true;
+      row.replaceChild(name, input);
+    }
+    input.onkeydown = function (ev) {
+      if (ev.key === "Enter") commit();
+      else if (ev.key === "Escape") cancel();
+    };
+    input.onblur = cancel;
+  }
   function set(state, text, url) {
     dot.className = "dot " + state;
     status.textContent = text;
@@ -155,6 +333,7 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
     statusUrl.style.display = url ? "block" : "none";
     start.style.display = state === "stopped" || state === "error" ? "block" : "none";
     ready.style.display = state === "ready" ? "flex" : "none";
+    newSession.style.display = state === "ready" ? "block" : "none";
   }
   function setUpgrade(latest, version) {
     var show = latest && version;
@@ -172,6 +351,18 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
     }
     if (m.type === "upgrade-info") {
       setUpgrade(m.latest, m.version);
+      return;
+    }
+    if (m.type === "sessions") {
+      renderSessions(m.items, m.archivedItems);
+      return;
+    }
+    if (m.type === "sessions-error") {
+      sessionsList.textContent = "";
+      var err = document.createElement("div");
+      err.className = "sessions-error";
+      err.textContent = ${JSON.stringify(t("sessions.error"))};
+      sessionsList.appendChild(err);
       return;
     }
     if (m.type !== "server-status") return;
@@ -197,14 +388,19 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
   public static readonly viewType = "deepseek-harness.view";
 
   private view?: vscode.WebviewView;
+  private pollTimer?: NodeJS.Timeout;
+  private isPolling = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly manager: DshServerManager,
-    private readonly openPanel: () => void,
-    private readonly onUpgrade: () => void
+    private readonly onUpgrade: () => void,
+    private readonly sessionHandlers: SessionHandlers
   ) {
-    manager.on("state", (info: ServerInfo) => this.postStatus(info));
+    manager.on("state", (info: ServerInfo) => {
+      this.postStatus(info);
+      this.syncPolling();
+    });
     // Keep the workspace footer live: opening/closing a folder updates it.
     context.subscriptions.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.postWorkspace())
@@ -215,21 +411,35 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.onDidReceiveMessage((msg) => {
-      const m = msg as { type?: string };
+      const m = msg as { type?: string; sessionId?: string; title?: string };
       if (m.type === "start") {
         void this.manager.start({ cwd: workspaceRoot() }).catch(() => {
           /* state machine drives the launcher */
         });
       } else if (m.type === "stop") {
         this.manager.stop();
-      } else if (m.type === "openPanel") {
-        this.openPanel();
       } else if (m.type === "upgrade") {
         this.onUpgrade();
+      } else if (m.type === "new-session") {
+        this.sessionHandlers.newSession();
+      } else if (m.type === "open-session" && m.sessionId) {
+        this.sessionHandlers.openSession(m.sessionId);
+      } else if (m.type === "rename-session" && m.sessionId && m.title !== undefined) {
+        void this.sessionHandlers
+          .renameSession(m.sessionId, m.title)
+          .catch(() => this.refreshSessions());
+      } else if (m.type === "archive-session" && m.sessionId) {
+        this.sessionHandlers.archiveSession(m.sessionId);
+      } else if (m.type === "refresh-sessions") {
+        this.refreshSessions();
       }
     });
     webviewView.onDidDispose(() => {
       this.view = undefined;
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer);
+        this.pollTimer = undefined;
+      }
     });
     webviewView.webview.html = launcherHtml({
       state: this.manager.state,
@@ -264,6 +474,57 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
       url: this.manager.serverUrl,
       version: this.manager.dshVersion,
     });
+  }
+
+  /** Start/stop the session-list poller with the view + server lifecycle. */
+  private syncPolling(): void {
+    const should = this.view !== undefined && this.manager.state === "ready";
+    if (should && !this.pollTimer) {
+      this.pollTimer = setInterval(() => void this.pollSessions(), SESSIONS_POLL_MS);
+      this.pollTimer.unref?.();
+      void this.pollSessions();
+    } else if (!should && this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+  }
+
+  /** Fetch the current workspace's sessions and push them to the webview. */
+  private async pollSessions(): Promise<void> {
+    if (this.isPolling) return; // re-entry guard: slow network skips a tick
+    this.isPolling = true;
+    try {
+      if (this.manager.state !== "ready" || !this.view) return;
+      const { items, archivedItems } = await this.manager.listWorkspaceSessions(workspaceRoot());
+      const titleOf = (s: { title: string | null; cwd?: string; sessionId: string; blank: boolean }): string =>
+        s.blank ? t("sessions.newSession") : sessionTitleOf(s.title, s.cwd, s.sessionId);
+      this.view.webview.postMessage({
+        type: "sessions",
+        items: items.map((s) => ({
+          sessionId: s.sessionId,
+          title: titleOf(s),
+          running: s.running,
+          updatedAt: s.updatedAt,
+        })),
+        archivedItems: archivedItems.map((s) => ({
+          sessionId: s.sessionId,
+          title: titleOf(s),
+          updatedAt: s.updatedAt,
+        })),
+      });
+    } catch (err) {
+      this.view?.webview.postMessage({
+        type: "sessions-error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      this.isPolling = false;
+    }
+  }
+
+  /** Force an immediate refresh (after rename/new/close, not the next tick). */
+  refreshSessions(): void {
+    void this.pollSessions();
   }
 
   private postWorkspace(): void {

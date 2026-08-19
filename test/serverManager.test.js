@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { parseUrlLine, resolveDshPath, DshServerManager } = require("../out/serverManager.js");
+const { parseUrlLine, resolveDshPath, DshServerManager, sameFsPath } = require("../out/serverManager.js");
 
 /** Write an executable fake dsh into a temp dir (platform-aware shim). */
 function fakeDsh(dir, opts = {}) {
@@ -160,4 +160,310 @@ test("stop() during the ready window settles the promise and stays stopped (no l
   // Wait past the ready timeout to ensure it does NOT flip back to "error".
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(manager.state, "stopped");
+});
+
+// --- session API (02-session-management T1) -------------------------------
+
+/** Mock global.fetch to serve the client-request envelope; restore afterwards. */
+function mockFetch(handler) {
+  const real = global.fetch;
+  global.fetch = async (_url, opts) => ({ json: async () => handler(JSON.parse(opts.body)) });
+  return () => {
+    global.fetch = real;
+  };
+}
+
+/** A manager whose server URL is set so api() calls hit the mock fetch. */
+function apiManager() {
+  const manager = new DshServerManager();
+  manager.url = "http://127.0.0.1:9999";
+  return manager;
+}
+
+test("listWorkspaceSessions filters session.list to the cwd workspace", async () => {
+  const manager = apiManager();
+  const restore = mockFetch((req) => {
+    if (req.method === "workspace.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2"] }],
+            archivedSessionIds: ["sx"],
+          },
+        },
+      };
+    }
+    if (req.method === "session.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [
+              { sessionId: "s1", updatedAt: 1, running: true, blank: false, cwd: "/ws/a", projections: { values: { title: "Titled" } } },
+              { sessionId: "s2", updatedAt: 2, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
+              { sessionId: "s3", updatedAt: 3, running: false, blank: false, cwd: "/other", projections: { values: { title: "Other" } } },
+            ],
+          },
+        },
+      };
+    }
+    throw new Error("unexpected method " + req.method);
+  });
+  try {
+    const { items, archivedItems } = await manager.listWorkspaceSessions("/ws/a");
+    assert.deepEqual(items.map((s) => s.sessionId), ["s1", "s2"]);
+    assert.equal(items[0].title, "Titled");
+    assert.equal(items[1].title, null);
+    // "sx" is archived globally but NOT bound to workspace w1 — the archived
+    // section only lists sessions of THIS workspace, so it is empty here.
+    assert.deepEqual(archivedItems, []);
+  } finally {
+    restore();
+  }
+});
+
+test("listWorkspaceSessions hides archived sessions from the active list", async () => {
+  const manager = apiManager();
+  const restore = mockFetch((req) => {
+    if (req.method === "workspace.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            // s2 is in the workspace's sessionIds but ALSO archived — DSH's
+            // archive is append-only, so the active list must hide it.
+            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2"] }],
+            archivedSessionIds: ["s2"],
+          },
+        },
+      };
+    }
+    if (req.method === "session.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [
+              { sessionId: "s1", updatedAt: 1, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
+              { sessionId: "s2", updatedAt: 2, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
+            ],
+          },
+        },
+      };
+    }
+    throw new Error("unexpected method " + req.method);
+  });
+  try {
+    const { items, archivedItems } = await manager.listWorkspaceSessions("/ws/a");
+    assert.deepEqual(items.map((s) => s.sessionId), ["s1"]);
+    assert.deepEqual(archivedItems.map((s) => s.sessionId), ["s2"]);
+    assert.equal(archivedItems[0].title, null);
+  } finally {
+    restore();
+  }
+});
+
+test("listWorkspaceSessions lists ALL active sessions including blank ones", async () => {
+  const manager = apiManager();
+  const restore = mockFetch((req) => {
+    if (req.method === "workspace.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2", "s3"] }],
+            archivedSessionIds: [],
+          },
+        },
+      };
+    }
+    if (req.method === "session.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [
+              { sessionId: "s1", updatedAt: 100, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
+              { sessionId: "s2", updatedAt: 200, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: "Chatted" } } },
+              { sessionId: "s3", updatedAt: 300, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
+            ],
+          },
+        },
+      };
+    }
+    throw new Error("unexpected method " + req.method);
+  });
+  try {
+    const { items } = await manager.listWorkspaceSessions("/ws/a");
+    // Every active session is listed, blank included (blank ones show as
+    // "New Session" with their relative time on the UI side).
+    assert.deepEqual(items.map((s) => s.sessionId), ["s1", "s2", "s3"]);
+    assert.deepEqual(items.map((s) => s.blank), [true, false, true]);
+  } finally {
+    restore();
+  }
+});
+
+test("listWorkspaceSessions returns empty when cwd has no workspace", async () => {
+  const manager = apiManager();
+  const restore = mockFetch(() => ({
+    result: { ok: true, value: { items: [{ workspaceId: "w1", path: "/other", sessionIds: [] }], archivedSessionIds: [] } },
+  }));
+  try {
+    const { items, archivedItems } = await manager.listWorkspaceSessions("/nowhere");
+    assert.deepEqual(items, []);
+    assert.deepEqual(archivedItems, []);
+  } finally {
+    restore();
+  }
+});
+
+test("renameSession sends the envelope and returns the accepted title", async () => {
+  const manager = apiManager();
+  let sent;
+  const restore = mockFetch((req) => {
+    sent = req;
+    return { result: { ok: true, value: { title: "新标题", seq: 3 } } };
+  });
+  try {
+    const res = await manager.renameSession("s1", "新标题");
+    assert.deepEqual(res, { title: "新标题", seq: 3 });
+    assert.equal(sent.type, "client-request");
+    assert.equal(sent.method, "session.rename");
+    assert.equal(sent.payload.sessionId, "s1");
+    assert.equal(sent.payload.title, "新标题");
+  } finally {
+    restore();
+  }
+});
+
+test("renameSession surfaces the DSH error code (title-invalid)", async () => {
+  const manager = apiManager();
+  const restore = mockFetch(() => ({
+    result: { ok: false, error: { code: "title-invalid", message: "title must be non-blank" } },
+  }));
+  try {
+    await assert.rejects(manager.renameSession("s1", "   "), (err) => {
+      assert.equal(err.code, "title-invalid");
+      return true;
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("archiveSession calls workspace.archiveSession and returns the archive set", async () => {
+  const manager = apiManager();
+  let sent;
+  const restore = mockFetch((req) => {
+    sent = req;
+    return { result: { ok: true, value: { archivedSessionIds: ["s1", "s2"] } } };
+  });
+  try {
+    const archived = await manager.archiveSession("s1");
+    assert.deepEqual(archived, ["s1", "s2"]);
+    assert.equal(sent.method, "workspace.archiveSession");
+    assert.deepEqual(sent.payload, { sessionId: "s1" });
+  } finally {
+    restore();
+  }
+});
+
+test("ensureWorkspaceSession reuses a blank bound session instead of creating", async () => {
+  const manager = apiManager();
+  const methods = [];
+  const restore = mockFetch((req) => {
+    methods.push(req.method);
+    if (req.method === "workspace.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            // s1 is bound and blank (user never chatted) — must be reused.
+            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }],
+            archivedSessionIds: [],
+          },
+        },
+      };
+    }
+    if (req.method === "session.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [
+              { sessionId: "s1", updatedAt: 1, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
+            ],
+          },
+        },
+      };
+    }
+    return { result: { ok: true, value: { sessionId: "created" } } };
+  });
+  try {
+    const id = await manager.ensureWorkspaceSession("/ws/a");
+    assert.equal(id, "s1");
+    assert.ok(!methods.includes("session.create"), "must NOT create a new session");
+  } finally {
+    restore();
+  }
+});
+
+test("ensureWorkspaceSession skips archived sessions and creates a fresh one", async () => {
+  const manager = apiManager();
+  const methods = [];
+  const restore = mockFetch((req) => {
+    methods.push(req.method);
+    if (req.method === "workspace.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            // s1 is bound but ARCHIVED — must not be reused as the default.
+            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }],
+            archivedSessionIds: ["s1"],
+          },
+        },
+      };
+    }
+    if (req.method === "session.list") {
+      return {
+        result: {
+          ok: true,
+          value: {
+            items: [
+              { sessionId: "s1", updatedAt: 1, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
+            ],
+          },
+        },
+      };
+    }
+    if (req.method === "session.create") {
+      return { result: { ok: true, value: { sessionId: "s2" } } };
+    }
+    return { result: { ok: false, error: { message: "unexpected " + req.method } } };
+  });
+  try {
+    const id = await manager.ensureWorkspaceSession("/ws/a");
+    assert.equal(id, "s2");
+    assert.ok(methods.includes("session.create"));
+  } finally {
+    restore();
+  }
+});
+
+test("sameFsPath matches normalized and realpath forms", (t) => {
+  assert.equal(sameFsPath("/a/b", "/a/b/"), true);
+  assert.equal(sameFsPath("/a/b", "/a/c"), false);
+  if (process.platform !== "win32") {
+    // macOS /tmp → /private/tmp: a symlinked form matches the realpath.
+    const dir = tmpdir(t);
+    const real = path.join(dir, "real");
+    fs.mkdirSync(real);
+    const link = path.join(dir, "link");
+    fs.symlinkSync(real, link);
+    assert.equal(sameFsPath(link, real), true);
+    assert.equal(sameFsPath(link + "/", real), true);
+  }
 });

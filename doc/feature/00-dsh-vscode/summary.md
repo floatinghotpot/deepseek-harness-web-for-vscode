@@ -14,7 +14,7 @@
 
 ## 文档产物
 
-`doc/architecture/proposal-by-deepseek.md`、`doc/marketing/market-analysis.md`、`doc/feature/00-dsh-vscode/`（discussion/req/solution/plan/spike-notes/verification/TODO/summary）、`doc/fix/20260817-vsix-missing-ws/record.md`、`doc/publishing.md`、`Makefile`。
+`doc/architecture/proposal-by-deepseek.md`、`doc/marketing/market-analysis.md`、`doc/feature/00-dsh-vscode/`（discussion/req/solution/plan/spike-notes/verification/TODO/summary）、`doc/fix/20260817-vsix-missing-ws/record.md`、`doc/publish/`、`Makefile`。
 
 ## 变更轨迹（git，全部已推送 + tag）
 
@@ -41,4 +41,4 @@
 3. **旧 ID 收尾**：Open VSX 旧条目 `floatinghotpot/deepseek-harness-for-vscode` 停更于 0.0.4（可选：页面留迁移说明）
 4. **首个延后项排期**：T13 共享实例探测（与"用户已跑着 3080"场景最相关）
 
-*关联文档：verification.md ｜ TODO.md ｜ plan.md ｜ doc/publishing.md*
+*关联文档：verification.md ｜ TODO.md ｜ plan.md ｜ doc/publish/README.md*

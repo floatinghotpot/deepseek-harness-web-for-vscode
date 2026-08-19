@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
-import { normalizePath, shouldAutoRestart, buildSessionPresetPayload } from "../out/workspaceTracker.js";
+import { normalizePath, shouldAutoRestart, buildSessionPresetPayload, sessionTitleOf } from "../out/workspaceTracker.js";
 
 test("shouldAutoRestart: true when the workspace record says it was running", () => {
   assert.equal(shouldAutoRestart(true), true);
@@ -63,4 +63,21 @@ test("buildSessionPresetPayload: serializes {sessionId} for dsh.sessions.current
 test("buildSessionPresetPayload: escapes special characters safely", () => {
   const payload = buildSessionPresetPayload('session-"quoted"\\<script>');
   assert.deepEqual(JSON.parse(payload), { sessionId: 'session-"quoted"\\<script>' });
+});
+
+test("sessionTitleOf: durable title wins over cwd basename", () => {
+  assert.equal(sessionTitleOf("修复登录 bug", "/ws/proj", "session-1"), "修复登录 bug");
+});
+
+test("sessionTitleOf: blank/whitespace title falls back to cwd basename", () => {
+  assert.equal(sessionTitleOf("  ", "/ws/proj", "session-1"), "proj");
+});
+
+test("sessionTitleOf: null title falls back to cwd basename", () => {
+  assert.equal(sessionTitleOf(null, "/ws/proj", "session-1"), "proj");
+});
+
+test("sessionTitleOf: missing cwd falls back to the session id", () => {
+  assert.equal(sessionTitleOf(null, undefined, "session-1"), "session-1");
+  assert.equal(sessionTitleOf(null, "", "session-1"), "session-1");
 });

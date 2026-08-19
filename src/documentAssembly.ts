@@ -85,6 +85,14 @@ function buildCsp(cspSource: string): string {
 }
 
 /**
+ * Shared in-flight guard for the dist-tree download. Restoring several
+ * panels at once calls assembleDocument concurrently; without this, each
+ * caller that sees a changed rev would rmSync + re-download the tree at the
+ * same time, clobbering each other's files and leaving some panels blank.
+ */
+let distDownloadInFlight: Promise<void> | undefined;
+
+/**
  * Fetch + cache the dist tree, then assemble the webview document.
  * Caching key: the boot manifest rev — a DSH upgrade (new rev) triggers a
  * fresh download; an unchanged rev reuses the cached tree.
@@ -104,11 +112,19 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
   let downloaded = false;
 
   if (cached !== rev) {
-    logf(`dist rev changed (${cached || "none"} -> ${rev}); re-downloading`);
-    fs.rmSync(distRootPath, { recursive: true, force: true });
-    fs.mkdirSync(distRootPath, { recursive: true });
-    await downloadTree(serverBase, distRootPath, indexHtml, asWebviewUri, fetchImpl, logf);
-    fs.writeFileSync(revFile, rev);
+    if (!distDownloadInFlight) {
+      distDownloadInFlight = (async () => {
+        logf(`dist rev changed (${cached || "none"} -> ${rev}); re-downloading`);
+        fs.rmSync(distRootPath, { recursive: true, force: true });
+        fs.mkdirSync(distRootPath, { recursive: true });
+        await downloadTree(serverBase, distRootPath, indexHtml, asWebviewUri, fetchImpl, logf);
+        fs.writeFileSync(revFile, rev);
+      })().finally(() => {
+        distDownloadInFlight = undefined;
+      });
+    }
+    // Concurrent callers wait for the shared download instead of racing it.
+    await distDownloadInFlight;
     downloaded = true;
   }
 

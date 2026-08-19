@@ -85,10 +85,13 @@ export class DshPanel {
   private panel?: vscode.WebviewPanel;
   private bridge?: BridgeHost;
   private pendingPreset?: string;
+  private disposedCbs: (() => void)[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly manager: DshServerManager
+    private readonly manager: DshServerManager,
+    /** Session bound to this panel (02-session-management T3); undefined = unbound. */
+    private readonly sessionId?: string
   ) {
     // Only mirror state into the overlay/placeholder; the extension drives
     // panel (re)assembly AFTER theme sync so the page loads with the right
@@ -113,17 +116,20 @@ export class DshPanel {
    * for `dsh.sessions.current` — written before the DSH module script runs so
    * the frontend selects the IDE workspace.
    */
-  open(sessionPreset?: string): void {
+  open(
+    sessionPreset?: string,
+    viewColumn: vscode.ViewColumn = vscode.ViewColumn.Beside
+  ): void {
     this.pendingPreset = sessionPreset;
     if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.Beside);
+      this.panel.reveal(viewColumn);
       if (this.manager.state === "ready") void this.refresh();
       return;
     }
     const panel = vscode.window.createWebviewPanel(
       DshPanel.viewType,
       PANEL_TITLE,
-      vscode.ViewColumn.Beside,
+      viewColumn,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -150,6 +156,7 @@ export class DshPanel {
       this.panel = undefined;
       this.bridge?.dispose();
       this.bridge = undefined;
+      for (const cb of this.disposedCbs) cb();
     });
 
     panel.webview.html = placeholderHtml();
@@ -158,8 +165,23 @@ export class DshPanel {
   }
 
   /** Reveal the panel if it exists (used by the start command). */
-  reveal(): void {
-    this.open();
+  reveal(viewColumn?: vscode.ViewColumn): void {
+    this.open(undefined, viewColumn);
+  }
+
+  /** Session bound to this panel (02-session-management T3). */
+  get boundSessionId(): string | undefined {
+    return this.sessionId;
+  }
+
+  /** Set the editor-tab title to reflect the session (review suggestion 3). */
+  updateTitle(title: string): void {
+    if (this.panel) this.panel.title = title ? `DSH: ${title}` : PANEL_TITLE;
+  }
+
+  /** Register a callback invoked when the editor tab is disposed (user close). */
+  onDisposed(cb: () => void): void {
+    this.disposedCbs.push(cb);
   }
 
   /**

@@ -6,13 +6,14 @@
 
 ## 标题
 
-DeepSeek Harness Web for VS Code 发布 1 天，Antigravity IDE 下载破 950！🎉
+DeepSeek Harness Web for VS Code，1 天下载破 950！
 
 ## 正文
 
-昨天发介绍，今天一查——扩展在 Antigravity IDE（Google 的 VS Code 系 AI IDE）下载 950+ 😭🙏
+昨天刚发布的 DSH for VS Code 插件，今天一查——
+扩展在 Antigravity IDE（Google 的 VS Code 系 AI IDE）下载 950+ 😭🙏
 
-大家爱的点：
+优点：
 🖥️ 编辑器标签页内嵌 DSH 完整 UI，不挡资源管理器
 🔗 与浏览器共享实例（~/.dsh），会话/设置/插件互通
 📋 剪贴板可用（传输桥修复 webview 老坑）
@@ -26,7 +27,9 @@ DeepSeek Harness Web for VS Code 发布 1 天，Antigravity IDE 下载破 950！
 
 有 bug 提 issue，有想法评论区见 🙌
 
-两步上车：1. `npm i -g @deepseek-ai/dsh`；2. 扩展市场搜 "DeepSeek Harness Web for VS Code"（Antigravity 同款）
+两步上车：
+1. 安装 DeepSeek Harness: npm i -g @deepseek-ai/dsh
+2. 扩展市场搜 "DeepSeek Harness Web for VS Code"（VS Code / Antigravity 同款）
 
 免费开源 MIT，好用就收藏 ✨
 

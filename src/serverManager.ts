@@ -9,6 +9,21 @@ import * as path from "node:path";
 import { EventEmitter } from "node:events";
 import { normalizePath } from "./workspaceTracker.js";
 
+/**
+ * Compare two filesystem paths for workspace matching. Normalized comparison
+ * first; when that fails, resolve symlinks (macOS /tmp → /private/tmp) and
+ * re-compare — DSH stores workspace paths as realpaths, while the extension
+ * may hold the symlinked form (feature 01 T7b note, hit in practice).
+ */
+export function sameFsPath(a: string, b: string): boolean {
+  if (normalizePath(a) === normalizePath(b)) return true;
+  try {
+    return normalizePath(fs.realpathSync(a)) === normalizePath(fs.realpathSync(b));
+  } catch {
+    return false;
+  }
+}
+
 export type ServerState = "stopped" | "starting" | "ready" | "stopping" | "error";
 
 export interface ServerInfo {
@@ -30,6 +45,18 @@ export interface StartOptions {
   dshBin?: string;
   /** Extra args appended after `web --port 0`. */
   extraArgs?: string[];
+}
+
+/** One session row for the sidebar list (02-session-management T1). */
+export interface SessionSummary {
+  sessionId: string;
+  updatedAt: number;
+  running: boolean;
+  blank: boolean;
+  cwd?: string;
+  agentPreset?: string;
+  /** `projections.values.title` cell — null when the session is unnamed. */
+  title: string | null;
 }
 
 const URL_LINE_RE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/;
@@ -291,47 +318,133 @@ export class DshServerManager extends EventEmitter {
   }
 
   /**
+   * One RPC call with the client-request envelope (spike-verified, see
+   * ensureWorkspaceSession doc). Node has no browser headers, so the /api
+   * trust fence passes. Throws with the DSH error `code` attached when the
+   * result is not ok.
+   */
+  private async api(method: string, payload: Record<string, unknown>): Promise<any> {
+    const base = this.url;
+    if (!base) throw new Error("dsh is not ready");
+    const res = await fetch(`${base}/api/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "client-request",
+        rpcId: `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        method,
+        payload,
+      }),
+    });
+    const body: any = await res.json();
+    if (!body?.result?.ok) {
+      const err: Error & { code?: string } = new Error(
+        `${method} failed: ${body?.result?.error?.message ?? "unknown"}`
+      );
+      err.code = body?.result?.error?.code ?? undefined;
+      throw err;
+    }
+    return body.result.value;
+  }
+
+  /**
    * Ensure the IDE workspace exists as a DSH workspace with at least one
    * session, and return a sessionId bound to it. Used by the UI-alignment
    * path (req R2 / T7b): the DSH frontend picks its initial workspace from the
    * "most recently active" session unless we preset `dsh.sessions.current`,
    * so we must first guarantee a session exists FOR THIS workspace.
    *
-   * RPC envelope (spike-verified): POST /api/<method>, payload is the method's
-   * args object directly (e.g. {path} for workspace.create, {workspaceId} for
-   * session.create); response is {type:"server-response", rpcId, result:{ok,
-   * value}} — Node has no browser headers, so the /api trust fence passes.
-   *
    * NOTE: session.create MUST use workspaceId — the {cwd} form creates a
    * session whose cwd is right but does NOT attach it to workspace.sessionIds
    * (spike finding, discussion.md §2.4).
    */
   async ensureWorkspaceSession(cwd: string): Promise<string> {
-    const base = this.url;
-    if (!base) throw new Error("dsh is not ready");
-    const api = async (method: string, payload: Record<string, unknown>): Promise<any> => {
-      const res = await fetch(`${base}/api/${method}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "client-request", rpcId: `ws-${Date.now()}`, method, payload }),
-      });
-      const body: any = await res.json();
-      if (!body?.result?.ok) {
-        throw new Error(`${method} failed: ${body?.result?.error?.message ?? "unknown"}`);
-      }
-      return body.result.value;
-    };
     // 1. Find an existing workspace whose path matches (realpath-normalized).
-    const { items: workspaces } = await api("workspace.list", {});
-    const target = workspaces.find((w: any) => normalizePath(w.path) === normalizePath(cwd));
-    const workspace = target ?? (await api("workspace.create", { path: cwd })).workspace;
-    const { items: sessions } = await api("session.list", {});
+    const ws = await this.api("workspace.list", {});
+    const target = (ws.items ?? []).find((w: any) => sameFsPath(w.path, cwd));
+    const workspace = target ?? (await this.api("workspace.create", { path: cwd })).workspace;
+    // Reuse ANY bound, non-archived session (blank included): previously we
+    // skipped blank sessions, so every ready cycle created a new one when the
+    // user had never chatted — accumulating a pile of same-titled sessions
+    // (F5 finding, 2026-08-19). New sessions are created explicitly via the
+    // sidebar's ＋New session button.
+    const archivedSet = new Set<string>(ws.archivedSessionIds ?? []);
+    const { items: sessions } = await this.api("session.list", {});
     const bound = sessions.find(
-      (s: any) => workspace.sessionIds.includes(s.sessionId) && s.blank === false
+      (s: any) => workspace.sessionIds.includes(s.sessionId) && !archivedSet.has(s.sessionId)
     );
     if (bound) return bound.sessionId;
-    // 2. No non-blank session yet — create one bound to this workspace.
-    return (await api("session.create", { workspaceId: workspace.workspaceId })).sessionId;
+    // 2. No usable session yet — create one bound to this workspace.
+    return (await this.api("session.create", { workspaceId: workspace.workspaceId })).sessionId;
+  }
+
+  /**
+   * Sessions belonging to the workspace at `cwd` (matched by normalized path),
+   * plus full summaries of the workspace's ARCHIVED sessions (so the sidebar
+   * can expand an "Archived" section with titles, not just ids). Filtering
+   * here keeps the list scoped to the IDE workspace (req R1).
+   */
+  async listWorkspaceSessions(
+    cwd: string
+  ): Promise<{ items: SessionSummary[]; archivedItems: SessionSummary[] }> {
+    const ws = await this.api("workspace.list", {});
+    const target = (ws.items ?? []).find((w: any) => sameFsPath(w.path, cwd));
+    if (!target) return { items: [], archivedItems: [] };
+    const ids = new Set<string>(target.sessionIds ?? []);
+    // DSH's archive is append-only (archivedSessionIds) and does NOT remove
+    // the session from workspace.sessionIds — hide archived ones from the
+    // active list ourselves so the sidebar's recycle bin behaves as expected.
+    const archivedSet = new Set<string>(ws.archivedSessionIds ?? []);
+    const list = await this.api("session.list", {});
+    const toSummary = (s: any): SessionSummary => ({
+      sessionId: s.sessionId,
+      updatedAt: s.updatedAt,
+      running: s.running,
+      blank: s.blank,
+      cwd: s.cwd,
+      agentPreset: s.agentPreset,
+      title: s.projections?.values?.title ?? null,
+    });
+    const items: SessionSummary[] = (list.items ?? [])
+      // Every ACTIVE session of this workspace, blank or not — blank ones are
+      // labelled "New Session" (with the row's relative time to tell them
+      // apart) on the UI side, so nothing is hidden (user preference).
+      .filter((s: any) => ids.has(s.sessionId) && !archivedSet.has(s.sessionId))
+      .map(toSummary);
+    const archivedItems: SessionSummary[] = (list.items ?? [])
+      .filter((s: any) => ids.has(s.sessionId) && archivedSet.has(s.sessionId))
+      .map(toSummary);
+    return { items, archivedItems };
+  }
+
+  /** Create a session bound to a workspace; returns the new sessionId. */
+  async createSession(workspaceId: string): Promise<string> {
+    const value = await this.api("session.create", { workspaceId });
+    return value.sessionId;
+  }
+
+  /** Workspace id for `cwd`, creating the workspace when missing. */
+  async workspaceIdFor(cwd: string): Promise<string> {
+    const ws = await this.api("workspace.list", {});
+    const target = (ws.items ?? []).find((w: any) => sameFsPath(w.path, cwd));
+    if (target) return target.workspaceId;
+    const created = await this.api("workspace.create", { path: cwd });
+    return created.workspace.workspaceId;
+  }
+
+  /** Rename a session (session.rename); throws with code "title-invalid" on rejection. */
+  async renameSession(sessionId: string, title: string): Promise<{ title: string; seq: number }> {
+    const value = await this.api("session.rename", { sessionId, title });
+    return { title: value.title, seq: value.seq };
+  }
+
+  /**
+   * Archive a session (workspace.archiveSession): it leaves the workspace's
+   * active list and joins archivedSessionIds. Returns the full archive set.
+   */
+  async archiveSession(sessionId: string): Promise<string[]> {
+    const value = await this.api("workspace.archiveSession", { sessionId });
+    return value.archivedSessionIds ?? [];
   }
 
   /** SIGTERM, escalate to SIGKILL after a grace period. */

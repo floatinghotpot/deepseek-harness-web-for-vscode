@@ -7,6 +7,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-19
+
+### Added
+- **Session manager** in the sidebar — lists all active sessions with title, relative activity time (`5m`/`3h`/`2d`), inline rename (`✎`), and archive (`✕`); an expandable **Archived** section shows archived sessions with titles; blank sessions appear as "New Session" rows. Refreshes every 5s (server-state aware, re-entry guarded).
+- **Multi-panel sessions** — `＋New session` opens a fresh editor panel bound to a new session; clicking a listed session opens/focuses its panel; panels **stack over the current tab group** (no more tiled narrow views).
+- **Archive closes the panel** — archiving a session also closes its open panel; the default panel is bound to the IDE workspace session so it can be closed too.
+- **Reload restores every open panel** — the dist-tree cache download is guarded against concurrent access, so restoring several panels at once never produces blank panels.
+- UI strings for the new features across all 9 languages.
+
+### Fixed
+- Blank sessions no longer accumulate on every start — existing ones are reused.
+- macOS realpath mismatch (`/var/folders` vs `/private/var/folders`) no longer breaks workspace matching.
+
+### Changed
+- Removed the redundant "Open View" button from the sidebar launcher (the command and status-bar entry remain).
+
 ## [0.1.0] - 2026-08-18
 
 ### Added

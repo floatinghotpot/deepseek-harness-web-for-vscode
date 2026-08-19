@@ -30,4 +30,4 @@
 - 发布前检查清单增加：`unzip -l <vsix> | grep node_modules` 非空（若声明了运行时依赖）；
 - 可选：将 `ws` 改为扩展内 lazy-import，使激活不依赖任何第三方模块（降激活风险）。
 
-*关联文档：doc/publishing.md ｜ verification.md*
+*关联文档：doc/publish/README.md ｜ verification.md*

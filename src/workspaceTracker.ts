@@ -38,3 +38,22 @@ export function buildSessionPresetPayload(sessionId: string): string {
   return JSON.stringify({ sessionId });
 }
 
+/**
+ * Display title for one session row, mirroring the DSH frontend's
+ * `displayTitleOf` precedence (durable title → cwd basename → session id,
+ * dsh-client-runtime/lib/client.js:8828). `title` is the
+ * `projections.values.title` cell (null when the session is unnamed).
+ */
+export function sessionTitleOf(
+  title: string | null | undefined,
+  cwd: string | undefined,
+  sessionId: string
+): string {
+  if (typeof title === "string" && title.trim() !== "") return title;
+  if (cwd) {
+    const base = path.basename(cwd);
+    if (base) return base;
+  }
+  return sessionId;
+}
+

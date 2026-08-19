@@ -38,7 +38,11 @@ doc/
 │   ├── product-gap.md                       ← 事实 + 差距：v0.0.10 能力事实（带代码锚点）→ 按价值层差距对照；strategy 的依据
 │   └── advise-by-gemini.md                  ← 外部（Gemini）提案评估：哪些吸收进策略、哪些拒绝
 │
-└── publishing.md                            ← 发布指南：双渠道元数据、操作步骤、GitHub Actions 模板
+└── publish/                                 ← 发布指南（拆分版）：索引 + 双渠道 + GitHub Actions
+    ├── README.md                            ← 发布索引：渠道概览、Makefile 快速参考、文档导航、版本规范
+    ├── vscode-marketplace.md                ← VS Code Marketplace：账号/PAT/vsce 发布/429 频控排错
+    ├── open-vsx.md                          ← Open VSX：Eclipse 账号/Publisher Agreement/token/namespace
+    └── github-actions.md                    ← GitHub Actions：tag 触发自动双发工作流 + Secrets 规范
 ```
 
 > `doc/daily/YYYYMMDD.md`（每日摘要）未列出——按用户要求在任务收尾时按需创建，目前尚无。
@@ -70,7 +74,7 @@ doc/
 → `marketing/market-analysis.md`
 
 **我想了解如何发布新版本**
-→ `publishing.md`
+→ `publish/README.md`（索引）→ 对应渠道分片
 
 ---
 

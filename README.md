@@ -22,6 +22,7 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 - **Works with the browser instance** — uses your `~/.dsh` by default, so sessions and settings are shared with the browser UI.
 - **Current folder as workspace** — the DSH default project directory is the folder you have open.
 - **Workspace alignment** — the DSH workspace anchor follows your IDE workspace: switching folders closes stale panels and starts cold, reloading the same workspace auto-restarts the server and restores the panel, and the embedded UI always shows the *current* folder (not the most recently active one).
+- **Session manager** — the sidebar lists all active sessions with title and relative activity time, with inline rename and archive; an expandable *Archived* section keeps old sessions tidy; `＋New session` opens a stacked panel bound to a fresh session, and multiple panels each hold their own conversation.
 - **Auto-start from the icon** — clicking the activity-bar icon starts dsh for you when it is not running.
 - **dsh version check + easy upgrade** — the launcher shows "Update available: x.y.z →" when a newer dsh exists; one click offers the right upgrade command for your install method (npx / npm global / nvm) prefilled into a terminal (24h check gate, offline-safe).
 - **Clipboard works** — copy/paste in the embedded UI goes through a transport bridge (VS Code webviews block clipboard inside iframes; the bridge routes it via `vscode.env.clipboard`).

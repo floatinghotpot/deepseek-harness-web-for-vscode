@@ -16,10 +16,10 @@
 
 | # | 项 | 目的/价值 | 成本 | 状态 |
 |---|---|---|---|---|
-| G-04 | **GitHub Actions 自动双发工作流** | tag 触发自动发布 Marketplace + Open VSX（模板在 doc/publishing.md） | 低（~0.5 天） | 待排期 |
+| G-04 | **GitHub Actions 自动双发工作流** | tag 触发自动发布 Marketplace + Open VSX（模板在 doc/publish/github-actions.md） | 低（~0.5 天） | 待排期 |
 | G-05 | **T17 settings 镜像 / 上游 isLoopback** | 让嵌入式页面同步 host 设置（locale 等）；主题已由 matchMedia shim 覆盖 | 低（提上游 issue）/ 高（本地实现） | **优先提上游 issue**，本地不做 |
 | G-06 | **README/详情页同步** | 详情页 README 快照随发版更新；多语言 README 门（9 语言壳层已就绪） | 低 | 随发版自动 |
-| G-12 | **会话管理器侧边栏 + 多面板多会话** | 会话列表镜像 + `＋新建会话` 开新面板绑新会话（localStorage 预置）——**feature 02（02-session-management）**，复杂度高 | 高（~2-3 天） | 推迟至 M2（roadmap M2） |
+| G-12 | **会话管理器侧边栏 + 多面板多会话** | 会话列表镜像 + `＋新建会话` 开新面板绑新会话（localStorage 预置）——**feature 02（02-session-management）**，复杂度高 | 高（~2-3 天） | ✅ **完成（roadmap M2，v0.2.0）** |
 
 ### P2 — 低优先 / 观察
 
@@ -40,4 +40,4 @@
 
 - 各 feature 的**延后项**仍在其目录内 `TODO.md`（如 `00-dsh-vscode/TODO.md` 的 T13–T18），本文件是**跨 feature 的优先级排序**，项可引用它们
 - 完成一项 → 从本表移除或标记 ✅；新增项 → 按优先级插入
-- 关联：[00-dsh-vscode/TODO.md](00-dsh-vscode/TODO.md)、[00-dsh-vscode/verification.md](00-dsh-vscode/verification.md)、[publishing.md](../publishing.md)
+- 关联：[00-dsh-vscode/TODO.md](00-dsh-vscode/TODO.md)、[00-dsh-vscode/verification.md](00-dsh-vscode/verification.md)、[publish/README.md](../publish/README.md)
