@@ -7,6 +7,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-08-20
+
+### Fixed
+- Browser still auto-opened on installs where the dsh **CLI** version is older than the resolved **web-app** (e.g. CLI `0.1.0-rc.7` + web-app `0.1.0-rc.8`): the `--no-open` gate used the CLI version string, which cannot tell which web-app rc an npm/npx cache resolved. The gate now probes the live `dsh web --help` output for `--no-open` (authoritative across any CLI/web-app pairing), falling back to the CLI-version gate only when the probe itself fails.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added

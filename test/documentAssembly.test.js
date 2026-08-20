@@ -8,12 +8,12 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { assembleDocument, extractRev, rewriteBootPluginUrls } = require("../out/documentAssembly.js");
+const { assembleDocument, extractRev, rewriteBootPluginUrls, rewriteBootPluginPreloads } = require("../out/documentAssembly.js");
 
 /** Serve a small fake DSH dist; returns { url, stop, requestCount }. */
 function serveDist(t) {
   const files = new Map([
-    ["/", `<!doctype html><html lang="zh-CN"><head><script>window.__DSH_BOOT__ = {"rev":"rev123","entries":[{"id":"p1","url":"/plugins/p1/client.js?rev=1"}]}</script><script type="module" crossorigin src="/assets/index-a1b2.js"></script><link rel="modulepreload" crossorigin href="/assets/vendor-c3d4.js"><link rel="stylesheet" crossorigin href="/assets/app-e5f6.css"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/favicon.svg"></head><body><div id="root"></div></body></html>`],
+    ["/", `<!doctype html><html lang="zh-CN"><head><script>(()=>{window.__ModuleLoader__={mode:"queue",pendingQueue:[],load(){},create(){}}})()</script><script src="/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=m1"></script><script src="/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=r1"></script><script>window.__DSH_BOOT__ = {"rev":"rev123","entries":[{"id":"p1","url":"/plugins/p1/client.js?rev=1"}]}</script><script type="module" crossorigin src="/assets/index-a1b2.js"></script><link rel="modulepreload" crossorigin href="/assets/vendor-c3d4.js"><link rel="stylesheet" crossorigin href="/assets/app-e5f6.css"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/favicon.svg"></head><body><div id="root"></div></body></html>`],
     ["/assets/index-a1b2.js", `import{c}from"./vendor-c3d4.js";import("./langs/ts.js");`],
     ["/assets/vendor-c3d4.js", "vendor-content"],
     ["/assets/app-e5f6.css", `@font-face{font-family:KaTeX;src:url(/assets/fonts/ka.woff2) format("woff2")}`],
@@ -69,6 +69,15 @@ test("rewriteBootPluginUrls makes plugin urls absolute", () => {
   assert.ok(out.includes('"url":"http://127.0.0.1:9999/plugins/p/client.js?rev=1"'));
 });
 
+test("rewriteBootPluginPreloads makes preload script src absolute (rc.8 boot manifest)", () => {
+  const html = `<head><script>(()=>{window.__ModuleLoader__={mode:"queue"}})()</script><script src="/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=m1"></script><script src="/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=r1"></script><script>window.__DSH_BOOT__ = {"entries":[{"id":"p","url":"/plugins/p/client.js?rev=1"}]}</script></head>`;
+  const out = rewriteBootPluginPreloads(html, "http://127.0.0.1:9999");
+  assert.ok(out.includes('src="http://127.0.0.1:9999/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=m1"'), "client-modules preload not absolutized");
+  assert.ok(out.includes('src="http://127.0.0.1:9999/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=r1"'), "client-runtime preload not absolutized");
+  // The JSON boot graph is untouched by the preload pass (its own pass handles it).
+  assert.ok(out.includes('"url":"/plugins/p/client.js?rev=1"'));
+});
+
 test("assembleDocument downloads the tree and rewrites the document", async (t) => {
   const server = await serveDist(t);
   const dist = tmpdir(t);
@@ -103,6 +112,11 @@ test("assembleDocument downloads the tree and rewrites the document", async (t) 
 
   // 3. plugin bundle url is absolute against the server.
   assert.ok(html.includes(`"url":"${server.url}/plugins/p1/client.js?rev=1"`));
+
+  // 3.5. boot-manifest preload script tags are absolute too (rc.8+ boot protocol).
+  assert.ok(html.includes(`src="${server.url}/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=m1"`));
+  assert.ok(html.includes(`src="${server.url}/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=r1"`));
+  assert.ok(!html.includes('src="/plugins/'), "no relative /plugins/ src may remain");
 
   // 4. server statics (manifest/favicon) point at the server.
   assert.ok(html.includes(`href="${server.url}/manifest.webmanifest"`));

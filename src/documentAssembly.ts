@@ -47,6 +47,14 @@ const SHELL_IMPORT_RE = /\.\/((?:vendor|langs)\/[A-Za-z0-9_.-]+\.js)/g;
 const BOOT_RE = /window\.__DSH_BOOT__ = (\{.*?\})<\/script>/s;
 const REV_RE = /"rev"\s*:\s*"([^"]+)"/;
 const SERVER_STATIC_RE = /(src|href)="\/(manifest\.webmanifest|favicon\.svg)"/g;
+// DSH boot-manifest preloads: injectBootManifest (dsh-client-modules >= rc.8)
+// emits blocking <script src="/plugins/..."> tags for @deepseek-ai/dsh-client-modules
+// and @deepseek-ai/dsh-client-runtime before window.__DSH_BOOT__. They are
+// classic scripts (cross-origin OK, spike F2/F14) but must be absolute like
+// the JSON entries, or the webview resolves them against vscode-webview://
+// and the module-system queue never receives the client-modules registration
+// ("Failed to load plugins / HTML did not preload .../client.js").
+const PLUGIN_PRELOAD_RE = /(src|href)="(\/plugins\/[^"]+)"/g;
 
 /** Extract the boot manifest rev from index.html ("" when absent). */
 export function extractRev(html: string): string {
@@ -69,6 +77,18 @@ export function rewriteBootPluginUrls(html: string, serverBase: string): string 
   }
   const next = JSON.stringify(graph).replaceAll("<", "\\u003c");
   return html.replace(m[1], next);
+}
+
+/**
+ * Rewrite the boot-manifest preload script tags to absolute server URLs.
+ * DSH (client-modules >= rc.8) injects blocking <script src="/plugins/...">
+ * preloads for @deepseek-ai/dsh-client-modules and @deepseek-ai/dsh-client-runtime
+ * before window.__DSH_BOOT__; like the JSON entries they must point at the
+ * server or the webview origin lookup fails and the module-system queue stays
+ * empty ("Failed to load plugins / HTML did not preload .../client.js").
+ */
+export function rewriteBootPluginPreloads(html: string, serverBase: string): string {
+  return html.replace(PLUGIN_PRELOAD_RE, (_m, attr: string, url: string) => `${attr}="${serverBase}${url}"`);
 }
 
 function buildCsp(cspSource: string): string {
@@ -133,6 +153,7 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
   html = html.replace(ASSET_REF_RE, (_m, attr: string, url: string) => `${attr}="${localAsset(url)}"`);
   html = html.replace(SERVER_STATIC_RE, (_m, attr: string, name: string) => `${attr}="${serverBase}/${name}"`);
   html = rewriteBootPluginUrls(html, serverBase);
+  html = rewriteBootPluginPreloads(html, serverBase);
 
   const bootScript =
     `<script>window.__DSH_BRIDGE__ = ${JSON.stringify({ serverBase, ...(themeDark !== undefined ? { dark: themeDark } : {}) })}<\/script>` +

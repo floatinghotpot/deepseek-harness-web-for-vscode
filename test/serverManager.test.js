@@ -7,13 +7,23 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { parseUrlLine, resolveDshPath, DshServerManager, sameFsPath } = require("../out/serverManager.js");
+const { parseUrlLine, resolveDshPath, probeNoOpenSupport, DshServerManager, sameFsPath } = require("../out/serverManager.js");
 
-/** Write an executable fake dsh into a temp dir (platform-aware shim). */
+/**
+ * Write an executable fake dsh into a temp dir (platform-aware shim).
+ * opts.helpNoOpen: `web --help` advertises --no-open (rc.8+ web-app shape).
+ * opts.recordArgs: file receiving the argv of every non-help invocation,
+ * so tests can assert exactly what the manager spawns.
+ */
 function fakeDsh(dir, opts = {}) {
+  const helpOut = opts.helpNoOpen ? `process.stdout.write("  --no-open  do not open the Web UI in the default browser\\n");\n` : "";
+  const help = `if (process.argv.includes("--help")) { ${helpOut}process.exit(0); }\n`;
+  const record = opts.recordArgs
+    ? `if (!process.argv.includes("--help")) require("node:fs").writeFileSync(${JSON.stringify(opts.recordArgs)}, JSON.stringify(process.argv.slice(2)));\n`
+    : "";
   const body = opts.quiet
-    ? `setInterval(() => {}, 1000);\n`
-    : `process.stdout.write("dsh web: http://127.0.0.1:34567\\n");\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
+    ? `${help}${record}setInterval(() => {}, 1000);\n`
+    : `${help}${record}process.stdout.write("dsh web: http://127.0.0.1:34567\\n");\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
   if (process.platform === "win32") {
     // Windows: cmd.exe cannot run unix-shebang scripts; ship a .cmd wrapper.
     const impl = path.join(dir, "dsh-impl.js");
@@ -111,6 +121,52 @@ test("start() reaches ready via stdout URL and stop() exits cleanly", async (t) 
   }
   assert.equal(manager.state, "stopped");
   assert.equal(manager.isRunning, false);
+});
+
+test("probeNoOpenSupport reads the live web --help (rc.8 web-app shape)", (t) => {
+  // web-app rc.7 shape: --help does not advertise --no-open → skip the flag.
+  const oldBin = fakeDsh(tmpdir(t));
+  assert.equal(probeNoOpenSupport(oldBin), false);
+  // web-app rc.8 shape: --help advertises --no-open → pass the flag.
+  const newBin = fakeDsh(tmpdir(t), { helpNoOpen: true });
+  assert.equal(probeNoOpenSupport(newBin), true);
+  // Missing binary → null (fall back to the CLI-version gate, never crash).
+  assert.equal(probeNoOpenSupport("/nonexistent/dsh"), null);
+});
+
+test("start() passes --no-open when the live web --help supports it (rc mismatch)", async (t) => {
+  // Regression: CLI rc.7 + web-app rc.8 (npx cache resolves a newer web-app
+  // than the CLI version string says). The CLI-version gate alone would skip
+  // --no-open and dsh would auto-open a browser; the live --help probe must
+  // win. The fake dsh does NOT print a version, so shouldPassNoOpen("…") is
+  // false — only the probe can flip the decision.
+  const dir = tmpdir(t);
+  const argsFile = path.join(dir, "args.json");
+  const bin = fakeDsh(dir, { helpNoOpen: true, recordArgs: argsFile });
+  const manager = new DshServerManager();
+  const url = await manager.start({ dshBin: bin, cwd: dir });
+  assert.equal(url, "http://127.0.0.1:34567");
+  const spawned = JSON.parse(fs.readFileSync(argsFile, "utf8"));
+  assert.ok(spawned.includes("--no-open"), `expected --no-open in spawn args, got ${JSON.stringify(spawned)}`);
+  const exited = new Promise((r) => manager.once("exit", r));
+  manager.stop();
+  await exited;
+});
+
+test("start() omits --no-open when the live web --help does not support it", async (t) => {
+  // web-app rc.6/rc.7 shape: commander would exit on the unknown option and
+  // kill startup, so the flag must be omitted.
+  const dir = tmpdir(t);
+  const argsFile = path.join(dir, "args.json");
+  const bin = fakeDsh(dir, { recordArgs: argsFile });
+  const manager = new DshServerManager();
+  const url = await manager.start({ dshBin: bin, cwd: dir });
+  assert.equal(url, "http://127.0.0.1:34567");
+  const spawned = JSON.parse(fs.readFileSync(argsFile, "utf8"));
+  assert.ok(!spawned.includes("--no-open"), `no --no-open expected, got ${JSON.stringify(spawned)}`);
+  const exited = new Promise((r) => manager.once("exit", r));
+  manager.stop();
+  await exited;
 });
 
 test("start() is idempotent when already ready", async (t) => {

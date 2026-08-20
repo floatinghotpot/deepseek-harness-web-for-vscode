@@ -3,7 +3,7 @@
 // and the upgrade interaction (QuickPick → integrated terminal prefilled, never
 // auto-run). Pure logic lives in versionCheck.ts (unit-tested).
 import * as vscode from "vscode";
-import { isUpdateAvailable, shouldCheckVersion, upgradeCommandFor } from "./versionCheck.js";
+import { isUpdateAvailable, shouldSkipVersionCheck, upgradeCommandFor } from "./versionCheck.js";
 import { t } from "./i18n.js";
 
 const LAST_CHECK_KEY = "dsh.lastVersionCheck";
@@ -38,10 +38,12 @@ export async function checkForUpdates(
   const now = Date.now();
   const last = context.workspaceState.get<number>(LAST_CHECK_KEY);
   const cached = context.workspaceState.get<string>(LATEST_KEY);
-  // Skip when checked recently AND we already know a latest version. If the
-  // last check never produced a result (fetch failed / no current version),
-  // re-check despite the gate so the hint can appear on the next start.
-  if (cached !== undefined && !shouldCheckVersion(last, now, CHECK_INTERVAL_MS)) return;
+  const cachedNext = context.workspaceState.get<string>(NEXT_KEY);
+  // Skip only when both channels are cached and the 24h gate says so. A
+  // missing NEXT_KEY means the last check predates the next-channel feature
+  // (0.3.0) — old caches hold latest only, so skipping would hide the rc.8
+  // prerelease hint forever (see shouldSkipVersionCheck).
+  if (shouldSkipVersionCheck(cached !== undefined, cachedNext !== undefined, last, now, CHECK_INTERVAL_MS)) return;
 
   // Mark the check as done FIRST so a slow/failed fetch cannot re-trigger
   // on every activation within the interval.

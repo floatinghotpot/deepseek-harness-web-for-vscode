@@ -1,7 +1,7 @@
 // Status bar item (T9): one-click entry + server state. Planned in plan.md
 // T9 but missing until the sidebar view was replaced by an editor tab.
 import * as vscode from "vscode";
-import { DshServerManager, type ServerState } from "./serverManager.js";
+import { DshServerManager, type ServerInfo, type ServerState } from "./serverManager.js";
 import { t } from "./i18n.js";
 
 const CMD_START = "deepseek-harness-for-vscode.start";
@@ -12,8 +12,14 @@ export function createDshStatusBar(
   manager: DshServerManager
 ): void {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  let disposed = false;
 
   const render = (state: ServerState, url?: string): void => {
+    // Guard: deactivate() disposes subscriptions in order, and the manager's
+    // stop() (from the stop-subscription) emits "state" while this listener
+    // may still be attached — mutating a disposed item throws
+    // "add a disposable to a DisposableStore that has already been disposed".
+    if (disposed) return;
     switch (state) {
       case "stopped":
         item.text = `$(circle-outline) ${t("statusbar.stopped")}`;
@@ -40,8 +46,17 @@ export function createDshStatusBar(
     }
   };
 
-  manager.on("state", (info) => render(info.state, info.url));
+  const onState = (info: ServerInfo): void => render(info.state, info.url);
+  manager.on("state", onState);
   render(manager.state, manager.serverUrl);
   item.show();
-  context.subscriptions.push(item);
+  // Detach the listener BEFORE disposing the item: VS Code disposes
+  // subscriptions in order and stop() may emit "state" during that window.
+  context.subscriptions.push({
+    dispose: () => {
+      disposed = true;
+      manager.off("state", onState);
+      item.dispose();
+    },
+  });
 }

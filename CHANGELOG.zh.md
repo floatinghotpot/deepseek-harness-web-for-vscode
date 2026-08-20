@@ -7,6 +7,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.3.1] - 2026-08-20
+
+### 修复
+- **仍会弹浏览器**：当 dsh **CLI** 版本旧于实际解析到的 **web-app** 时（如 CLI `0.1.0-rc.7` + web-app `0.1.0-rc.8`），`--no-open` 门控按 CLI 版本字符串判断——但该字符串无法反映 npm/npx 缓存解析出的 web-app 版本。现改为探测实际生效的 `dsh web --help` 输出是否含 `--no-open`（对任意 CLI/web-app 组合都权威），仅在探测本身失败时回退到 CLI 版本门控。
+
 ## [0.3.0] - 2026-08-20
 
 ### 新增

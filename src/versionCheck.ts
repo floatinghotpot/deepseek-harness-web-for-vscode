@@ -109,3 +109,21 @@ export function shouldCheckVersion(lastCheckTs: number | undefined, now: number,
   if (lastCheckTs === undefined) return true;
   return now - lastCheckTs >= intervalMs;
 }
+
+/**
+ * Whether the 24h gate should skip the registry check. The gate only applies
+ * when BOTH cached channels exist: a missing `next` cache means the last
+ * successful check predates the next-channel feature (0.3.0) — old installs
+ * cached `latest` only, so skipping would hide the rc.8 prerelease hint
+ * forever. Unknown current versions also re-check (never nag wrongly).
+ */
+export function shouldSkipVersionCheck(
+  hasLatestCache: boolean,
+  hasNextCache: boolean,
+  lastCheckTs: number | undefined,
+  now: number,
+  intervalMs = 24 * 60 * 60 * 1000
+): boolean {
+  if (!hasLatestCache || !hasNextCache) return false;
+  return !shouldCheckVersion(lastCheckTs, now, intervalMs);
+}

@@ -123,6 +123,34 @@ export function resolveDshVersion(bin: string): string | null {
   return null;
 }
 
+const noOpenProbeCache = new Map<string, boolean | null>();
+
+/**
+ * Probe whether the installed `dsh web` accepts `--no-open` by reading its own
+ * `--help` output. The flag belongs to dsh-web-app (introduced rc.8), NOT the
+ * dsh CLI — the CLI version cannot tell which web-app rc an npx cache
+ * resolved ("CLI rc.7 + web-app rc.8" mixes exist and would wrongly skip the
+ * flag → dsh auto-opens a browser), and passing the unknown option on old
+ * web-apps makes commander exit and kills startup. The live `--help` text is
+ * authoritative regardless of the CLI/web-app pairing. Returns null when the
+ * probe itself fails (missing binary, timeout) — callers fall back to the
+ * CLI-version gate.
+ */
+export function probeNoOpenSupport(bin: string): boolean | null {
+  if (noOpenProbeCache.has(bin)) return noOpenProbeCache.get(bin)!;
+  let result: boolean | null = null;
+  try {
+    const res = spawnSync(bin, ["web", "--help"], { encoding: "utf8", timeout: 5000, shell: process.platform === "win32" });
+    // status === 0 means the probe ran (empty help output is still a valid
+    // "no --no-open" answer); only a failed/never-started probe yields null.
+    if (res.status === 0) result = /--no-open/.test(res.stdout ?? "");
+  } catch {
+    /* keep null */
+  }
+  noOpenProbeCache.set(bin, result);
+  return result;
+}
+
 /** Binary suffixes to probe, per platform (Windows npm shims are .cmd). */
 function exeSuffixes(platform: NodeJS.Platform): string[] {
   return platform === "win32" ? ["", ".cmd"] : [""];
@@ -245,9 +273,13 @@ export class DshServerManager extends EventEmitter {
 
     const args = ["web", "--port", "0"];
     // rc.8+ auto-opens the default browser (openBrowser default true); the
-    // embedded-UI use case must suppress it. Version-gated: older CLIs reject
-    // the unknown flag and would fail to start (03-upgrade-channels R1).
-    if (shouldPassNoOpen(version ?? undefined)) args.push("--no-open");
+    // embedded-UI use case must suppress it. The --no-open flag is owned by
+    // dsh-web-app, not the CLI, so decide by probing the live `web --help`
+    // (authoritative even under a CLI/web-app rc mismatch); when the probe
+    // itself fails, fall back to the CLI-version gate (03-upgrade-channels R1).
+    const noOpenProbe = probeNoOpenSupport(bin);
+    const passNoOpen = noOpenProbe ?? shouldPassNoOpen(version ?? undefined);
+    if (passNoOpen) args.push("--no-open");
     args.push(...(opts.extraArgs ?? []));
 
     const child = spawn(bin, args, {

@@ -9,6 +9,7 @@ import {
   upgradeCommandFor,
   shouldPassNoOpen,
   shouldCheckVersion,
+  shouldSkipVersionCheck,
 } from "../out/versionCheck.js";
 
 test("compareVersions: same version is equal", () => {
@@ -92,6 +93,20 @@ test("shouldCheckVersion: 24h gate", () => {
   assert.equal(shouldCheckVersion(undefined, now), true);
   assert.equal(shouldCheckVersion(now - 25 * 60 * 60 * 1000, now), true);
   assert.equal(shouldCheckVersion(now - 1 * 60 * 60 * 1000, now), false);
+});
+
+test("shouldSkipVersionCheck: gate needs BOTH caches (next-channel backfill)", () => {
+  const now = 1_000_000;
+  const hourAgo = now - 60 * 60 * 1000;
+  // Fresh install: nothing cached → never skip.
+  assert.equal(shouldSkipVersionCheck(false, false, hourAgo, now), false);
+  // Old install upgraded from <0.3.0: latest cached, next NOT (feature is new)
+  // → must NOT skip, so the registry is re-checked and next gets populated.
+  assert.equal(shouldSkipVersionCheck(true, false, hourAgo, now), false);
+  // Both cached + recent check → skip (normal 24h gate).
+  assert.equal(shouldSkipVersionCheck(true, true, hourAgo, now), true);
+  // Both cached + stale check → re-check.
+  assert.equal(shouldSkipVersionCheck(true, true, now - 25 * 60 * 60 * 1000, now), false);
 });
 
 test("shouldPassNoOpen: threshold matrix (--no-open exists since 0.1.0-rc.8)", () => {
