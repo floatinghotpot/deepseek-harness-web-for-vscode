@@ -10,7 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.1] - 2026-08-20
 
 ### Fixed
+- **"Failed to load plugins / HTML did not preload @deepseek-ai/dsh-client-modules/client.js"** on dsh web-app rc.8+: the boot manifest injects blocking `<script src="/plugins/...">` preload tags for the client-modules and client-runtime bundles, but only the `__DSH_BOOT__` JSON entries were rewritten to absolute server URLs. The preload tags stayed relative and resolved against the `vscode-webview://` origin, so the module-system queue never received the client-modules registration. They are now absolutized too (same F14 treatment as the JSON entries).
 - Browser still auto-opened on installs where the dsh **CLI** version is older than the resolved **web-app** (e.g. CLI `0.1.0-rc.7` + web-app `0.1.0-rc.8`): the `--no-open` gate used the CLI version string, which cannot tell which web-app rc an npm/npx cache resolved. The gate now probes the live `dsh web --help` output for `--no-open` (authoritative across any CLI/web-app pairing), falling back to the CLI-version gate only when the probe itself fails.
+- **Prerelease (next) upgrade hint never appeared** on installs that upgraded from versions before the next-channel feature: the 24h check gate only looked at the `latest` cache, so a missing `next` cache was never backfilled. The gate now only skips when BOTH channels are cached, triggering a re-check that populates the rc.8 hint.
+- **"Trying to add a disposable to a DisposableStore that has already been disposed of"** when closing VS Code: the status bar registered the item as a subscription but never detached its state listener, so `stop()` during deactivation emitted "state" and mutated the already-disposed item. The listener is now detached (and guarded) before the item is disposed.
+
+### Added
+- **Sidebar extension version** — the launcher header now shows `extension v0.3.1` under the DeepSeek Harness title (read from the extension's own package.json, no hardcoded id).
 
 ## [0.3.0] - 2026-08-20
 

@@ -10,7 +10,13 @@
 ## [0.3.1] - 2026-08-20
 
 ### 修复
+- **"Failed to load plugins / HTML did not preload @deepseek-ai/dsh-client-modules/client.js"**（dsh web-app rc.8+）：boot 清单会注入 client-modules / client-runtime 的阻塞式 `<script src="/plugins/...">` preload 标签，但此前只把 `__DSH_BOOT__` JSON 内的插件 URL 改写为绝对服务器地址，preload 标签仍是相对路径、按 `vscode-webview://` 源解析失败，模块系统队列收不到 client-modules 注册。现与 JSON 条目同样处理（F14 同款），preload 标签也绝对化。
 - **仍会弹浏览器**：当 dsh **CLI** 版本旧于实际解析到的 **web-app** 时（如 CLI `0.1.0-rc.7` + web-app `0.1.0-rc.8`），`--no-open` 门控按 CLI 版本字符串判断——但该字符串无法反映 npm/npx 缓存解析出的 web-app 版本。现改为探测实际生效的 `dsh web --help` 输出是否含 `--no-open`（对任意 CLI/web-app 组合都权威），仅在探测本身失败时回退到 CLI 版本门控。
+- **看不到 next（预览版）升级提醒**：从 next 渠道功能之前的版本升级上来的安装，24h 门控只看了 `latest` 缓存，导致缺失的 `next` 缓存永远不会被补查。现门控只在**两个渠道都已缓存**时才跳过，触发一次补查以写入 rc.8 提醒。
+- **关闭 VS Code 时报 "Trying to add a disposable to a DisposableStore that has already been disposed of"**：状态栏把 item 注册为 subscription 但从未解除 state 监听器，deactivate 期间 `stop()` 触发 "state" 事件、操作了已释放的 item。现监听器在 item 释放前先解除（并加防护）。
+
+### 新增
+- **侧边栏扩展版本号** —— 启动器头部在 DeepSeek Harness 标题下显示 `extension v0.3.1`（读取扩展自身 package.json，不硬编码 ID）。
 
 ## [0.3.0] - 2026-08-20
 
