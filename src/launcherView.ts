@@ -7,7 +7,8 @@ import { DshServerManager, type ServerInfo, type ServerState } from "./serverMan
 import { workspaceRoot } from "./commands.js";
 import { t, langCode } from "./i18n.js";
 import { sessionTitleOf } from "./workspaceTracker.js";
-import { upgradeInfo } from "./versionCheckService.js";
+import { upgradeInfo, type UpgradeChannel } from "./versionCheckService.js";
+import { isUpdateAvailable } from "./versionCheck.js";
 
 /** Session-list polling interval while the launcher is visible and ready. */
 const SESSIONS_POLL_MS = 5_000;
@@ -28,6 +29,8 @@ interface LauncherInit {
   workspaceName?: string;
   /** Latest dsh version known from the registry (upgrade hint, G-03). */
   latestVersion?: string;
+  /** Prerelease dsh version from the `next` dist-tag (upgrade hint, 03 R2). */
+  nextVersion?: string;
 }
 
 function launcherHtml(init: LauncherInit): string {
@@ -47,9 +50,13 @@ function launcherHtml(init: LauncherInit): string {
   const showStart = init.state === "stopped" || init.state === "error";
   const showReady = init.state === "ready";
   const showUrl = init.state === "ready" && !!init.url;
-  const upgradeText =
-    init.state === "ready" && init.latestVersion && init.version
-      ? t("upgrade.available", { latest: init.latestVersion })
+  const latestText =
+    init.state === "ready" && init.latestVersion
+      ? t("upgrade.availableLatest", { latest: init.latestVersion })
+      : "";
+  const nextText =
+    init.state === "ready" && init.nextVersion
+      ? t("upgrade.availableNext", { next: init.nextVersion })
       : "";
   const workspaceText = init.workspaceName
     ? t("launcher.workspace", { name: init.workspaceName })
@@ -149,7 +156,8 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
     </div>
   </div>
 
-  <button class="upgrade" id="upgrade" style="display:${upgradeText ? "block" : "none"}">${upgradeText} →</button>
+  <button class="upgrade" id="upgradeLatest" style="display:${latestText ? "block" : "none"}">${latestText} →</button>
+  <button class="upgrade" id="upgradeNext" style="display:${nextText ? "block" : "none"}">${nextText} →</button>
 
   <div class="actions">
     <button class="primary" id="start" style="display:${showStart ? "block" : "none"}">${t("button.start")}</button>
@@ -175,13 +183,15 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
   var stop = document.getElementById("stop");
   var footer = document.getElementById("footer");
   var statusUrl = document.getElementById("statusUrl");
-  var upgrade = document.getElementById("upgrade");
+  var upgradeLatest = document.getElementById("upgradeLatest");
+  var upgradeNext = document.getElementById("upgradeNext");
   var newSession = document.getElementById("newSession");
   var sessionsList = document.getElementById("sessionsList");
   var archExpanded = false; // survives the 5s poll re-render (archive section)
   start.onclick = function(){ vscode.postMessage({ type: "start" }); };
   stop.onclick = function(){ vscode.postMessage({ type: "stop" }); };
-  upgrade.onclick = function(){ vscode.postMessage({ type: "upgrade" }); };
+  upgradeLatest.onclick = function(){ vscode.postMessage({ type: "upgrade", channel: "latest" }); };
+  upgradeNext.onclick = function(){ vscode.postMessage({ type: "upgrade", channel: "next" }); };
   newSession.onclick = function(){ vscode.postMessage({ type: "new-session" }); };
   function renderSessions(items, archivedItems) {
     sessionsList.textContent = "";
@@ -335,10 +345,17 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
     ready.style.display = state === "ready" ? "flex" : "none";
     newSession.style.display = state === "ready" ? "block" : "none";
   }
-  function setUpgrade(latest, version) {
-    var show = latest && version;
-    upgrade.style.display = show ? "block" : "none";
-    if (show) upgrade.textContent = ${JSON.stringify(t("upgrade.available", { latest: "{latest}" }))}.replace("{latest}", latest) + " →";
+  function setUpgrade(latest, next) {
+    var ltxt = latest
+      ? ${JSON.stringify(t("upgrade.availableLatest", { latest: "{latest}" }))}.replace("{latest}", latest) + " →"
+      : "";
+    var ntxt = next
+      ? ${JSON.stringify(t("upgrade.availableNext", { next: "{next}" }))}.replace("{next}", next) + " →"
+      : "";
+    upgradeLatest.style.display = ltxt ? "block" : "none";
+    upgradeLatest.textContent = ltxt;
+    upgradeNext.style.display = ntxt ? "block" : "none";
+    upgradeNext.textContent = ntxt;
   }
   window.addEventListener("message", function (e) {
     var m = e.data;
@@ -350,7 +367,7 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
       return;
     }
     if (m.type === "upgrade-info") {
-      setUpgrade(m.latest, m.version);
+      setUpgrade(m.latest, m.next);
       return;
     }
     if (m.type === "sessions") {
@@ -374,7 +391,7 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
         ? ${JSON.stringify(t("launcher.readyVersion", { version: "{version}" }))}.replace("{version}", m.version)
         : ${JSON.stringify(t("launcher.ready"))};
       set("ready", readyText, m.url || "");
-      setUpgrade(m.latestVersion, m.version);
+      setUpgrade(m.latestVersion, m.nextVersion);
     }
     else if (m.state === "error") set("error", ${JSON.stringify(t("launcher.error", { message: "{message}" }))}.replace("{message}", m.message || "unknown"));
   });
@@ -394,7 +411,7 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly manager: DshServerManager,
-    private readonly onUpgrade: () => void,
+    private readonly onUpgrade: (channel: UpgradeChannel) => void,
     private readonly sessionHandlers: SessionHandlers
   ) {
     manager.on("state", (info: ServerInfo) => {
@@ -419,7 +436,7 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
       } else if (m.type === "stop") {
         this.manager.stop();
       } else if (m.type === "upgrade") {
-        this.onUpgrade();
+        this.onUpgrade((m as { channel?: string }).channel === "next" ? "next" : "latest");
       } else if (m.type === "new-session") {
         this.sessionHandlers.newSession();
       } else if (m.type === "open-session" && m.sessionId) {
@@ -441,11 +458,14 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
         this.pollTimer = undefined;
       }
     });
+    const currentVersion = this.manager.dshVersion;
+    const upd = upgradeInfo(this.context, currentVersion, this.manager.dshBinPath);
     webviewView.webview.html = launcherHtml({
       state: this.manager.state,
       url: this.manager.serverUrl,
-      version: this.manager.dshVersion,
-      latestVersion: upgradeInfo(this.context, this.manager.dshVersion, this.manager.dshBinPath)?.latest,
+      version: currentVersion,
+      latestVersion: upd && isUpdateAvailable(currentVersion, upd.latest) ? upd.latest : undefined,
+      nextVersion: upd && isUpdateAvailable(currentVersion, upd.next) ? upd.next : undefined,
       workspaceName: vscode.workspace.workspaceFolders?.[0]?.name,
     });
     this.postStatus({
@@ -464,6 +484,11 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
         /* state machine drives the launcher */
       });
     }
+    // Start the session poller even when the server is ALREADY ready at view
+    // open: syncPolling() is otherwise only reached via state transitions, and
+    // an already-running server never fires one after the view resolves — the
+    // sidebar would stay empty until the next start/stop (02 bug, 2026-08-20).
+    this.syncPolling();
   }
 
   /** Re-push the current status so late-arriving data (e.g. version check
@@ -533,13 +558,15 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
   }
 
   private postStatus(info: ServerInfo): void {
-    // Only surface the upgrade hint when there is a REAL update (current is
-    // strictly older than the cached latest). Equal/absent → no hint.
-    const upd = upgradeInfo(this.context, info.version ?? this.manager.dshVersion, this.manager.dshBinPath);
+    // Surface per-channel upgrade hints only when that channel is a REAL
+    // update (current strictly older than the cached channel version).
+    const current = info.version ?? this.manager.dshVersion;
+    const upd = upgradeInfo(this.context, current, this.manager.dshBinPath);
     this.view?.webview.postMessage({
       type: "server-status",
       ...info,
-      latestVersion: upd?.latest,
+      latestVersion: upd && isUpdateAvailable(current, upd.latest) ? upd.latest : undefined,
+      nextVersion: upd && isUpdateAvailable(current, upd.next) ? upd.next : undefined,
     });
   }
 }

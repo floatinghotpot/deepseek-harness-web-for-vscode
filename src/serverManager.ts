@@ -8,6 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { EventEmitter } from "node:events";
 import { normalizePath } from "./workspaceTracker.js";
+import { shouldPassNoOpen } from "./versionCheck.js";
 
 /**
  * Compare two filesystem paths for workspace matching. Normalized comparison
@@ -242,7 +243,14 @@ export class DshServerManager extends EventEmitter {
     const env = { ...process.env };
     if (opts.dshHome) env.DSH_HOME = opts.dshHome;
 
-    const child = spawn(bin, ["web", "--port", "0", ...(opts.extraArgs ?? [])], {
+    const args = ["web", "--port", "0"];
+    // rc.8+ auto-opens the default browser (openBrowser default true); the
+    // embedded-UI use case must suppress it. Version-gated: older CLIs reject
+    // the unknown flag and would fail to start (03-upgrade-channels R1).
+    if (shouldPassNoOpen(version ?? undefined)) args.push("--no-open");
+    args.push(...(opts.extraArgs ?? []));
+
+    const child = spawn(bin, args, {
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],

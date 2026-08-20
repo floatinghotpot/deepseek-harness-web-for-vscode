@@ -59,30 +59,49 @@ export function isUpdateAvailable(current: string | undefined, latest: string | 
 }
 
 /**
- * Infer the upgrade command from the resolved dsh binary path. The path
+ * Infer the upgrade command from the resolved dsh binary path, for the given
+ * npm dist-tag channel ("latest" stable or "next" prerelease). The path
  * feature tells us how dsh was installed (see resolveDshPath candidates):
- *   - npx cache (~/.npm/_npx/<hash>/...) → npx re-fetches the latest
- *   - npm global prefix bin            → npm i -g
- *   - nvm-scoped npm global            → npm i -g (under the active node)
- *   - npm-global custom prefix         → npm i -g
- *   - Homebrew /usr/local              → npm i -g (or brew)
+ *   - npx cache (~/.npm/_npx/<hash>/...) → npx re-fetches the channel
+ *   - npm global prefix bin            → npm i -g @channel
+ *   - nvm-scoped npm global            → npm i -g @channel (under the active node)
+ *   - npm-global custom prefix         → npm i -g @channel
+ *   - Homebrew /usr/local              → npm i -g @channel (or brew)
  *   - $DSH_BIN custom path             → can't know; user manages it
  * Returns the recommended command, or null when the install method is
  * unknown/custom (user manages it themselves).
  */
-export function upgradeCommandFor(dshPath: string | undefined): string | null {
+export function upgradeCommandFor(
+  dshPath: string | undefined,
+  channel: "latest" | "next" = "latest"
+): string | null {
   if (!dshPath) return null;
   // Normalize separators to forward slashes so the same feature checks work
   // on every platform (Windows D:\...\_npx\... -> D:/.../_npx/...).
   const p = dshPath.replace(/\\/g, "/");
-  if (p.includes("/_npx/")) return "npx -y @deepseek-ai/dsh@latest --version";
-  if (p.includes("/.nvm/versions/node/")) return "npm i -g @deepseek-ai/dsh@latest";
-  if (p.includes("/.npm-global/")) return "npm i -g @deepseek-ai/dsh@latest";
-  if (p.includes("/homebrew/") || p.includes("/opt/homebrew/")) return "npm i -g @deepseek-ai/dsh@latest";
-  if (p.includes("/usr/local/bin/")) return "npm i -g @deepseek-ai/dsh@latest";
+  const spec = `@deepseek-ai/dsh@${channel}`;
+  if (p.includes("/_npx/")) return `npx -y ${spec} --version`;
+  if (p.includes("/.nvm/versions/node/")) return `npm i -g ${spec}`;
+  if (p.includes("/.npm-global/")) return `npm i -g ${spec}`;
+  if (p.includes("/homebrew/") || p.includes("/opt/homebrew/")) return `npm i -g ${spec}`;
+  if (p.includes("/usr/local/bin/")) return `npm i -g ${spec}`;
   // npm prefix bin (e.g. /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js).
-  if (p.includes("node_modules/@deepseek-ai/dsh/")) return "npm i -g @deepseek-ai/dsh@latest";
+  if (p.includes("node_modules/@deepseek-ai/dsh/")) return `npm i -g ${spec}`;
   return null;
+}
+
+/**
+ * Whether the installed dsh accepts the `--no-open` flag. Added in the web
+ * app at 0.1.0-rc.8 (browser auto-open became the default; `--no-open`
+ * disables it). Older CLIs reject unknown options and would fail to start,
+ * so the flag must never be passed below this threshold. Unparseable or
+ * unknown versions → false (conservative: never break startup).
+ */
+export function shouldPassNoOpen(version: string | undefined): boolean {
+  if (!version) return false;
+  const re = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+  if (!re.test(version.trim())) return false;
+  return compareVersions(version, "0.1.0-rc.8") >= 0;
 }
 
 /** 24h gate: should we re-check the registry now? (update-notifier pattern) */

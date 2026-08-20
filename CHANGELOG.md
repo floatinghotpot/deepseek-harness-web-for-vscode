@@ -7,6 +7,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-20
+
+### Added
+- **Dual-channel upgrade hints** — the sidebar now tracks both npm channels: a **latest** button and a **next** (prerelease) button appear independently when a newer version exists on that channel (e.g. `latest 0.1.0-rc.7` + `next 0.1.0-rc.8`); each opens a QuickPick with the matching `@latest` / `@next` command (prefilled into a terminal, never auto-run).
+- **`--no-open` browser suppression** — dsh 0.1.0-rc.8+ opens the default browser on `dsh web` by default; the extension now passes `--no-open` (version-gated, so older CLIs that reject the flag are unaffected) to keep the embedded UI browser-free.
+
+### Fixed
+- Session list stayed empty when the launcher sidebar was opened while dsh was **already running** (polling only started on a state transition). It now polls immediately at view open.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added

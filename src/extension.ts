@@ -13,7 +13,7 @@ import { DshLauncherView } from "./launcherView.js";
 import { registerThemeSync } from "./themeSync.js";
 import { createDshStatusBar } from "./statusBar.js";
 import { normalizePath, shouldAutoRestart, buildSessionPresetPayload } from "./workspaceTracker.js";
-import { checkForUpdates, showUpgradeOptions } from "./versionCheckService.js";
+import { checkForUpdates, showUpgradeOptions, type UpgradeChannel } from "./versionCheckService.js";
 
 const WAS_RUNNING_KEY = "dsh.wasRunning";
 const PANELS_KEY = "dsh.panels";
@@ -159,7 +159,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let launcher: DshLauncherView | undefined = new DshLauncherView(
     context,
     manager,
-    () => void showUpgradeOptions(context, m.dshVersion, m.dshBinPath),
+    (channel: UpgradeChannel) => void showUpgradeOptions(context, m.dshVersion, m.dshBinPath, channel),
     { newSession: () => void onNewSession(), openSession: onOpenSession, renameSession: onRenameSession, archiveSession: (sid) => void onArchiveSession(sid) }
   );
   context.subscriptions.push(

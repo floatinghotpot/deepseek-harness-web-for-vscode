@@ -7,6 +7,7 @@ import {
   compareVersions,
   isUpdateAvailable,
   upgradeCommandFor,
+  shouldPassNoOpen,
   shouldCheckVersion,
 } from "../out/versionCheck.js";
 
@@ -91,4 +92,30 @@ test("shouldCheckVersion: 24h gate", () => {
   assert.equal(shouldCheckVersion(undefined, now), true);
   assert.equal(shouldCheckVersion(now - 25 * 60 * 60 * 1000, now), true);
   assert.equal(shouldCheckVersion(now - 1 * 60 * 60 * 1000, now), false);
+});
+
+test("shouldPassNoOpen: threshold matrix (--no-open exists since 0.1.0-rc.8)", () => {
+  assert.equal(shouldPassNoOpen("0.1.0-rc.7"), false);
+  assert.equal(shouldPassNoOpen("0.0.1-rc.5"), false);
+  assert.equal(shouldPassNoOpen("0.1.0-rc.8"), true);
+  assert.equal(shouldPassNoOpen("0.1.0-rc.9"), true);
+  assert.equal(shouldPassNoOpen("0.1.0"), true);
+  assert.equal(shouldPassNoOpen("0.2.0"), true);
+  // Conservative: unknown / unparseable versions must never pass the flag.
+  assert.equal(shouldPassNoOpen(undefined), false);
+  assert.equal(shouldPassNoOpen(""), false);
+  assert.equal(shouldPassNoOpen("garbage"), false);
+  assert.equal(shouldPassNoOpen("dev-build"), false);
+});
+
+test("upgradeCommandFor: next channel uses @next spec", () => {
+  const npx = "/Users/me/.npm/_npx/1e7f6d9597241db0/node_modules/.bin/dsh";
+  assert.equal(upgradeCommandFor(npx, "next"), "npx -y @deepseek-ai/dsh@next --version");
+  assert.equal(
+    upgradeCommandFor("/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js", "next"),
+    "npm i -g @deepseek-ai/dsh@next"
+  );
+  // Default channel stays "latest" (backward compatible).
+  assert.equal(upgradeCommandFor(npx), upgradeCommandFor(npx, "latest"));
+  assert.equal(upgradeCommandFor(undefined, "next"), null);
 });

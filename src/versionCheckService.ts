@@ -8,15 +8,20 @@ import { t } from "./i18n.js";
 
 const LAST_CHECK_KEY = "dsh.lastVersionCheck";
 const LATEST_KEY = "dsh.latestVersion";
+const NEXT_KEY = "dsh.nextVersion";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const REGISTRY_URL = "https://registry.npmjs.org/@deepseek-ai/dsh";
 const FETCH_TIMEOUT_MS = 5000;
 
+export type UpgradeChannel = "latest" | "next";
+
 export interface UpgradeInfo {
-  /** Latest version known from the registry (undefined when not checked). */
+  /** Latest stable version known from the registry (undefined when not checked). */
   latest?: string;
-  /** The upgrade command recommended for the current install method. */
-  command: string | null;
+  /** Latest prerelease version from the `next` dist-tag (undefined when absent). */
+  next?: string;
+  /** Recommended upgrade command for the current install method + channel. */
+  commandFor: (channel: UpgradeChannel) => string | null;
 }
 
 /**
@@ -56,11 +61,16 @@ export async function checkForUpdates(
         console.log(`[dsh] version check: registry HTTP ${res.status}`);
         return;
       }
-      const pkg = (await res.json()) as { "dist-tags"?: { latest?: string } };
+      const pkg = (await res.json()) as { "dist-tags"?: { latest?: string; next?: string } };
       const latest = pkg["dist-tags"]?.latest;
+      const next = pkg["dist-tags"]?.next;
       if (latest) {
         void context.workspaceState.update(LATEST_KEY, latest);
         console.log(`[dsh] latest dsh = ${latest}`);
+      }
+      if (next) {
+        void context.workspaceState.update(NEXT_KEY, next);
+        console.log(`[dsh] next dsh = ${next}`);
       }
     } finally {
       clearTimeout(timer);
@@ -79,6 +89,11 @@ export function cachedLatest(context: vscode.ExtensionContext): string | undefin
   return context.workspaceState.get<string>(LATEST_KEY);
 }
 
+/** Read the cached `next` (prerelease) version, if the last check saw one. */
+export function cachedNext(context: vscode.ExtensionContext): string | undefined {
+  return context.workspaceState.get<string>(NEXT_KEY);
+}
+
 /** Build the sidebar upgrade hint + interaction. */
 export function upgradeInfo(
   context: vscode.ExtensionContext,
@@ -86,27 +101,36 @@ export function upgradeInfo(
   dshPath: string | undefined
 ): UpgradeInfo | undefined {
   const latest = cachedLatest(context);
-  if (!isUpdateAvailable(currentVersion, latest)) return undefined;
-  return { latest, command: upgradeCommandFor(dshPath) };
+  const next = cachedNext(context);
+  const newer = (c: string | undefined) =>
+    c !== undefined && isUpdateAvailable(currentVersion, c);
+  if (!newer(latest) && !newer(next)) return undefined;
+  return { latest, next, commandFor: (c) => upgradeCommandFor(dshPath, c) };
 }
 
 /**
- * Show the upgrade options (QuickPick) and prefill a terminal with the chosen
- * command. NEVER executes the command automatically.
+ * Show the upgrade options for one npm channel (latest stable / next
+ * prerelease) and prefill a terminal with the chosen command. NEVER executes
+ * the command automatically.
  */
 export async function showUpgradeOptions(
   context: vscode.ExtensionContext,
   currentVersion: string | undefined,
-  dshPath: string | undefined
+  dshPath: string | undefined,
+  channel: UpgradeChannel = "latest"
 ): Promise<void> {
   const info = upgradeInfo(context, currentVersion, dshPath);
-  if (!info || !info.latest) return;
+  const target = channel === "latest" ? info?.latest : info?.next;
+  if (!info || !target) return;
+  // Stale click: the channel is not actually newer than the running version.
+  if (!isUpdateAvailable(currentVersion, target)) return;
 
-  const recommended = info.command
-    ? { label: t("upgrade.recommended"), detail: info.command, command: info.command }
+  const spec = `@deepseek-ai/dsh@${channel}`;
+  const recommended = info.commandFor(channel)
+    ? { label: t("upgrade.recommended"), detail: info.commandFor(channel)!, command: info.commandFor(channel)! }
     : undefined;
-  const npmGlobal = { label: "npm global", detail: "npm i -g @deepseek-ai/dsh@latest", command: "npm i -g @deepseek-ai/dsh@latest" };
-  const npx = { label: "npx (cache)", detail: "npx -y @deepseek-ai/dsh@latest --version", command: "npx -y @deepseek-ai/dsh@latest --version" };
+  const npmGlobal = { label: "npm global", detail: `npm i -g ${spec}`, command: `npm i -g ${spec}` };
+  const npx = { label: "npx (cache)", detail: `npx -y ${spec} --version`, command: `npx -y ${spec} --version` };
   const items = [recommended, npmGlobal, npx].filter(
     (x): x is { label: string; detail: string; command: string } => !!x
   );
@@ -116,8 +140,13 @@ export async function showUpgradeOptions(
     command: "",
   });
 
+  const channelText =
+    channel === "latest"
+      ? t("upgrade.availableLatest", { latest: target })
+      : t("upgrade.availableNext", { next: target });
+
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `${t("upgrade.available", { latest: info.latest })} (${t("upgrade.current", { version: currentVersion ?? "?" })})`,
+    placeHolder: `${channelText} (${t("upgrade.current", { version: currentVersion ?? "?" })})`,
     ignoreFocusOut: true,
   });
   if (!picked) return;
