@@ -44,7 +44,10 @@ export interface Assembled {
 const ASSET_REF_RE = /(src|href)="(\/assets\/[^"]+)"/g;
 const CSS_URL_RE = /url\(\s*["']?(\/assets\/[^)"']+)["']?\s*\)/g;
 const SHELL_IMPORT_RE = /\.\/((?:vendor|langs)\/[A-Za-z0-9_.-]+\.js)/g;
-const BOOT_RE = /window\.__DSH_BOOT__ = (\{.*?\})<\/script>/s;
+// Boot manifest injection changed shape between rc.8 (`window.__DSH_BOOT__ =`)
+// and 0.1.1-rc.2 (`globalThis["__DSH_BOOT__"] =`). Match either prefix; the
+// capture runs to the closing `</script>`.
+const BOOT_RE = /(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])\s*=\s*(\{.*?\})<\/script>/s;
 const REV_RE = /"rev"\s*:\s*"([^"]+)"/;
 const SERVER_STATIC_RE = /(src|href)="\/(manifest\.webmanifest|favicon\.svg)"/g;
 // DSH boot-manifest preloads: injectBootManifest (dsh-client-modules >= rc.8)

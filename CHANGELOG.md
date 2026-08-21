@@ -7,6 +7,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-08-20
+
+### Fixed
+- **"Failed to load plugins" with dsh 0.1.1-rc.2** — upgrading dsh to 0.1.1-rc.2 broke the embedded panel again: the boot manifest changed its injection from `window.__DSH_BOOT__` to `globalThis["__DSH_BOOT__"]`, so plugin bundle URLs were no longer rewritten to the server and the webview could not load them ("bundle script /plugins/... failed to load"). Both boot shapes are now recognized.
+
 ## [0.3.1] - 2026-08-20
 
 ### Fixed

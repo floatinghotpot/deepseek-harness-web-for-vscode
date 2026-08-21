@@ -7,6 +7,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.3.2] - 2026-08-20
+
+### 修复
+- **dsh 0.1.1-rc.2 下面板报 "Failed to load plugins"** —— dsh 升级到 0.1.1-rc.2 后内嵌面板再次失效：boot 注入从 `window.__DSH_BOOT__` 改为 `globalThis["__DSH_BOOT__"]`，插件 bundle URL 不再被改写为服务器地址，webview 无法加载（"bundle script /plugins/... failed to load"）。现已兼容两种注入形态。
+
 ## [0.3.1] - 2026-08-20
 
 ### 修复

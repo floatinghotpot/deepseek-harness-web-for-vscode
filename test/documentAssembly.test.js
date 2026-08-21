@@ -69,6 +69,18 @@ test("rewriteBootPluginUrls makes plugin urls absolute", () => {
   assert.ok(out.includes('"url":"http://127.0.0.1:9999/plugins/p/client.js?rev=1"'));
 });
 
+test("rewriteBootPluginUrls matches the 0.1.1-rc.2 globalThis boot shape", () => {
+  // 0.1.1-rc.2 changed the injection from `window.__DSH_BOOT__ =` to
+  // `globalThis["__DSH_BOOT__"] =`; the JSON entries must still be absolutized
+  // or the webview resolves /plugins/ against its own origin and the plugin
+  // bundles fail to load ("failed to import loader entry ... bundle script
+  // /plugins/... failed to load").
+  const html = `<script>globalThis["__DSH_BOOT__"] = {"rev":"r","entries":[{"id":"p","url":"/plugins/p/client.js?rev=1"}]}</script>`;
+  const out = rewriteBootPluginUrls(html, "http://127.0.0.1:9999");
+  assert.ok(out.includes('"url":"http://127.0.0.1:9999/plugins/p/client.js?rev=1"'));
+  assert.ok(out.includes('globalThis["__DSH_BOOT__"]'), "injection statement preserved");
+});
+
 test("rewriteBootPluginPreloads makes preload script src absolute (rc.8 boot manifest)", () => {
   const html = `<head><script>(()=>{window.__ModuleLoader__={mode:"queue"}})()</script><script src="/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=m1"></script><script src="/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=r1"></script><script>window.__DSH_BOOT__ = {"entries":[{"id":"p","url":"/plugins/p/client.js?rev=1"}]}</script></head>`;
   const out = rewriteBootPluginPreloads(html, "http://127.0.0.1:9999");
