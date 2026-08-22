@@ -241,8 +241,13 @@ export class DshServerManager extends EventEmitter {
   }
 
   private setState(state: ServerState, info: Omit<ServerInfo, "state"> = {}): void {
+    const prev = this._state;
     this._state = state;
     if (info.url) this.url = info.url;
+    // Sleep/wake diagnostics (2026-08-21): log every state transition with the
+    // child pid, so a laptop-sleep repro shows exactly when/why the manager
+    // left "ready" (ext-host restart vs child exit vs stop()).
+    console.log(`[dsh] state ${prev} -> ${state}${info.url ? ` url=${info.url}` : ""}${info.message ? ` msg=${info.message}` : ""} pid=${this.child?.pid ?? "-"}`);
     this.emit("state", { state, ...info, ...(this._version ? { version: this._version } : {}) });
   }
 
@@ -261,6 +266,9 @@ export class DshServerManager extends EventEmitter {
     const version = resolveDshVersion(bin);
     this._version = version ?? undefined;
     this._binPath = bin;
+    // Sleep/wake diagnostics: log every start() entry with the current state
+    // so we can tell a fresh instance's start from a same-instance restart.
+    console.log(`[dsh] start() called: bin=${bin} prevState=${this._state} cwd=${cwd}`);
     this.emit("log", `spawning ${bin} (version=${version ?? "?"}, cwd=${cwd}, tried=[${resolved.tried.join(", ")}])`);
 
     this.stdoutBuffer = "";
@@ -304,6 +312,9 @@ export class DshServerManager extends EventEmitter {
         this.emit("stderr", chunk.toString());
       });
       child.on("error", (err: NodeJS.ErrnoException) => {
+        // Sleep/wake diagnostics: an "error" event without exit is a signal
+        // hiccup (e.g. EINTR after SIGSTOP/CONT during laptop sleep).
+        console.log(`[dsh] child error pid=${child.pid} code=${err.code} msg=${err.message}`);
         const msg =
           err.code === "ENOENT"
             ? `dsh not found. Tried: ${["PATH", ...resolved.tried].join(", ")}. ` +
@@ -312,6 +323,9 @@ export class DshServerManager extends EventEmitter {
         this.settleError(new Error(msg));
       });
       child.on("exit", (code, signal) => {
+        // Sleep/wake diagnostics: exit during sleep is the prime suspect — log
+        // the previous state so we can see whether "ready" was lost.
+        console.log(`[dsh] child exit pid=${child.pid} code=${code} signal=${signal} prevState=${this._state}`);
         this.clearKillTimer();
         const prev = this._state;
         if (prev === "ready") {

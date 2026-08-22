@@ -7,6 +7,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-08-22
+
+### Fixed
+- **Sidebar status frozen on "Starting…"** — after switching the sidebar (e.g. file tree ↔ DeepSeek Harness) or waking the laptop, the sidebar status could stay on the blinking "Starting…" state even though the service was ready and the session list refreshed normally. The status message was sent before the sidebar page finished loading and got dropped. The page now signals when it is ready to receive updates, and the extension re-pushes the current status then.
+
 ## [0.3.2] - 2026-08-20
 
 ### Fixed

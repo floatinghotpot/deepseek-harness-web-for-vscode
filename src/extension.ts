@@ -21,6 +21,10 @@ const PANELS_KEY = "dsh.panels";
 let manager: DshServerManager | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Sleep/wake diagnostics: a fresh activate() after laptop sleep means the
+  // extension host restarted (the manager instance below is brand-new and
+  // starts "stopped" even though the old dsh child may still be alive).
+  console.log(`[dsh] activate: wasRunning=${context.workspaceState.get<boolean>(WAS_RUNNING_KEY)} workspace=${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "(none)"}`);
   manager = new DshServerManager();
   manager.on("log", (msg: string) => console.log("[dsh]", msg));
   manager.on("stderr", (msg: string) => console.log("[dsh]", msg));
@@ -59,6 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // restore every panel that was open before, each preset to its session;
   // otherwise open the IDE workspace session panel as before.
   const autoRestart = shouldAutoRestart(context.workspaceState.get<boolean>(WAS_RUNNING_KEY));
+  console.log(`[dsh] activate: autoRestart=${autoRestart} (wasRunning=${context.workspaceState.get<boolean>(WAS_RUNNING_KEY)})`);
   let restoredPanels = false;
   const m = manager;
   m.on("state", async (info) => {
@@ -174,6 +179,10 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
+  // Sleep/wake diagnostics: if this runs during a laptop-sleep-triggered
+  // extension-host restart, it stops the child — the next activate() would
+  // then spawn a NEW dsh (autoRestart), orphaning any still-alive panel.
+  console.log(`[dsh] deactivate: state=${manager?.state} pid=${manager?.dshBinPath ?? "-"}`);
   // No persistence here: `dsh.wasRunning` is synced on state transitions
   // during activate (T3). This function only stops the child.
   manager?.stop();

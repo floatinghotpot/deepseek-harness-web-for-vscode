@@ -179,6 +179,16 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
 <script>
 (function(){
   var vscode = acquireVsCodeApi();
+  // Sleep/wake diagnostics: log the state this webview was first rendered
+  // with, and every server-status update it receives — the sidebar UI can
+  // freeze on "Starting…" if the initial HTML was built during "starting"
+  // and the later "ready" postMessage is lost/missed.
+  console.log("[dsh-wv] rendered with state=" + ${JSON.stringify(init.state)});
+  // Handshake (2026-08-22): tell the extension host the page is listening so
+  // it re-pushes the current state. The postStatus sent immediately after
+  // webview.html= can be dropped while the page is still loading; this
+  // message is guaranteed to arrive only once the listener below exists.
+  vscode.postMessage({ type: "view-ready" });
   var dot = document.getElementById("dot");
   var status = document.getElementById("status");
   var start = document.getElementById("start");
@@ -386,6 +396,7 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
       return;
     }
     if (m.type !== "server-status") return;
+    console.log("[dsh-wv] server-status received: " + m.state);
     if (m.state === "stopped") set("stopped", ${JSON.stringify(t("launcher.stopped"))});
     else if (m.state === "starting") set("starting", ${JSON.stringify(t("launcher.starting"))});
     else if (m.state === "stopping") set("starting", ${JSON.stringify(t("launcher.stopping"))});
@@ -428,11 +439,31 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
+    // Sleep/wake diagnostics: every sidebar re-resolve re-renders the HTML from
+    // manager.state — log it so we can see what state the view was built with
+    // after a laptop sleep (a re-resolve during "starting" would freeze the UI
+    // there even though the manager later reaches "ready").
+    console.log(`[dsh] resolve launcher view: managerState=${this.manager.state} url=${this.manager.serverUrl ?? "-"}`);
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.onDidReceiveMessage((msg) => {
       const m = msg as { type?: string; sessionId?: string; title?: string };
-      if (m.type === "start") {
+      if (m.type === "view-ready") {
+        // Handshake (2026-08-22): the webview page loads asynchronously after
+        // `webview.html = ...`, so the postStatus sent right after may be
+        // dropped if the page's message listener is not yet registered (the
+        // sidebar UI could freeze on the initial render — e.g. "Starting…" —
+        // while the session poller keeps working). Re-push the CURRENT state
+        // once the page signals it is listening; this message is guaranteed
+        // to arrive after the listener exists.
+        console.log(`[dsh] launcher view-ready handshake: state=${this.manager.state}`);
+        this.postStatus({
+          state: this.manager.state,
+          url: this.manager.serverUrl,
+          version: this.manager.dshVersion,
+        });
+        this.postWorkspace();
+      } else if (m.type === "start") {
         void this.manager.start({ cwd: workspaceRoot() }).catch(() => {
           /* state machine drives the launcher */
         });
