@@ -6,7 +6,6 @@
 [![CI](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/actions)
 [![GitHub Release](https://img.shields.io/github/v/release/floatinghotpot/deepseek-harness-web-for-vscode)](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/releases/latest)
 [![Open VSX Version](https://img.shields.io/open-vsx/v/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-latest-blue)](https://marketplace.visualstudio.com/items?itemName=floatinghotpot.deepseek-harness-web-for-vscode)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
 
 一键启动 **DeepSeek Harness**，把它的完整 Web UI 内嵌进 VS Code（及兼容 fork 的 Antigravity IDE）——在同一个窗口里跑 DSH Agent、写代码，与浏览器打开的实例**共享同一份状态**。
@@ -40,8 +39,13 @@
 
 ## 安装
 
-- **VS Code**：[Visual Studio Marketplace](https://marketplace.visualstudio.com/) 搜索 *DeepSeek Harness Web for VS Code*
-- **Antigravity / Open VSX**：[Open VSX](https://open-vsx.org/) 同名
+- **Antigravity / Open VSX**：[Open VSX](https://open-vsx.org/) 搜索 *DeepSeek Harness Web for VS Code*
+- **VS Code**：Marketplace 条目已被移除（正在与微软团队沟通恢复事宜，详见
+  [事件记录](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/blob/main/doc/fix/20260826-marketplace-vsid-lock/record.md)）。
+  恢复前请从 GitHub 安装：
+  - 从 [GitHub Releases](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/releases)
+    下载最新 `.vsix`，扩展视图 → `...` → **从 VSIX 安装...**
+  - 注意：GitHub 的 `.vsix` 未签名（VS Code 会提示允许未知来源扩展），且**不自动更新**——新版本需手动重新安装。
 
 ## 使用
 

@@ -6,7 +6,6 @@
 [![CI](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/actions)
 [![GitHub Release](https://img.shields.io/github/v/release/floatinghotpot/deepseek-harness-web-for-vscode)](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/releases/latest)
 [![Open VSX Version](https://img.shields.io/open-vsx/v/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-latest-blue)](https://marketplace.visualstudio.com/items?itemName=floatinghotpot.deepseek-harness-web-for-vscode)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/floatinghotpot/deepseek-harness-web-for-vscode)](https://open-vsx.org/extension/floatinghotpot/deepseek-harness-web-for-vscode)
 
 Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigravity, the VS Code fork) — so you can run DSH Agents and edit code in one window, sharing the same instance as your browser.
@@ -40,8 +39,14 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 
 ## Install
 
-- **VS Code**: [Visual Studio Marketplace](https://marketplace.visualstudio.com/) → search *DeepSeek Harness Web for VS Code*
-- **Antigravity / Open VSX**: [Open VSX](https://open-vsx.org/) → same name
+- **Antigravity / Open VSX**: [Open VSX](https://open-vsx.org/) → search *DeepSeek Harness Web for VS Code*
+- **VS Code**: the Marketplace listing was removed (reinstatement is being pursued with Microsoft —
+  see [record of the incident](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/blob/main/doc/fix/20260826-marketplace-vsid-lock/record.md)).
+  Until reinstated, install from GitHub:
+  - Download the latest `.vsix` from [GitHub Releases](https://github.com/floatinghotpot/deepseek-harness-web-for-vscode/releases),
+    then Extensions view → `...` → **Install from VSIX...**
+  - Note: the GitHub `.vsix` is unsigned (VS Code asks to allow an unknown-source extension) and does
+    **not** auto-update — reinstall manually for new versions.
 
 ## Usage
 
