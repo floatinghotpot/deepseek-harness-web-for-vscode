@@ -9,7 +9,9 @@ import { relayHttp, WsRelay, type HttpRequestMsg } from "./bridgeCore.js";
 /**
  * Wires one webview to the DSH server: forwards http / ws / clipboard
  * messages. `resolveBase` returns the current server base (it may change
- * when the server restarts on a new port).
+ * when the server restarts on a new port); `resolveCookie` returns the
+ * browser-session cookie (dsh 0.1.2+) minted for that server, attached to
+ * every relayed /api request and WebSocket upgrade.
  */
 export class BridgeHost {
   private wsRelay: WsRelay;
@@ -18,9 +20,10 @@ export class BridgeHost {
   constructor(
     private webview: vscode.Webview,
     private resolveBase: () => string,
+    private resolveCookie?: () => string | undefined,
     private fetchImpl: typeof fetch = fetch
   ) {
-    this.wsRelay = new WsRelay((msg) => this.webview.postMessage(msg), resolveBase);
+    this.wsRelay = new WsRelay((msg) => this.webview.postMessage(msg), resolveBase, resolveCookie);
     this.disposables.push(
       webview.onDidReceiveMessage((msg) => {
         void this.handle(msg);
@@ -35,7 +38,7 @@ export class BridgeHost {
       switch (m.type) {
         case "http": {
           const req = m as unknown as HttpRequestMsg;
-          const res = await relayHttp(this.resolveBase(), req, this.fetchImpl);
+          const res = await relayHttp(this.resolveBase(), req, this.fetchImpl, this.resolveCookie?.());
           if (res.status >= 400) {
             console.log(`[dsh] relay ${req.method} ${req.url} -> HTTP ${res.status}`);
           }

@@ -4,11 +4,13 @@
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { EventEmitter } from "node:events";
+import WebSocket from "ws";
 import { normalizePath } from "./workspaceTracker.js";
-import { shouldPassNoOpen } from "./versionCheck.js";
+import { compareVersions, shouldPassNoOpen } from "./versionCheck.js";
 
 /**
  * Compare two filesystem paths for workspace matching. Normalized comparison
@@ -60,14 +62,141 @@ export interface SessionSummary {
   title: string | null;
 }
 
-const URL_LINE_RE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/;
+// dsh 0.1.2-rc.1 launch line: `dsh web: http://127.0.0.1:<port>/?token=<launchToken>`
+// (0.1.1-rc.7 and older print the bare URL). The optional `?token=...` suffix is
+// the process launch token that mints the browser-session cookie (`GET /?token=`
+// -> 303 + Set-Cookie); the manager must keep it for the exchange, while the
+// exposed base URL stays token-free.
+const URL_LINE_RE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)(\/\?[^\s]+)?/;
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const SIGKILL_GRACE_MS = 6_000;
+// dsh < 0.1.2-rc.1 speaks the pre-Typert RPC surface (dot methods, no browser
+// cookie auth); 0.1.2-rc.1 reworked both, so older CLIs are unsupported.
+const MIN_DSH_VERSION = "0.1.2-rc.1";
+const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
-/** Extract the ready URL from one dsh stdout line, or null. */
-export function parseUrlLine(line: string): string | null {
+export interface WorkspaceEntry {
+  workspaceId: string;
+  path: string;
+  sessionIds: string[];
+}
+
+export interface WorkspaceSnapshot {
+  items: WorkspaceEntry[];
+  archivedSessionIds: string[];
+}
+
+/**
+ * Parse one dsh stdout line into the ready URL. Returns the base URL and,
+ * when the 0.1.2+ launch line carries one, the token-bearing authenticated
+ * URL used to mint the browser-session cookie. null when the line is not the
+ * ready line.
+ */
+export function parseReadyLine(line: string): { url: string; authUrl?: string } | null {
   const m = line.match(URL_LINE_RE);
-  return m ? m[1] : null;
+  if (!m) return null;
+  const url = m[1];
+  const authUrl = m[2] ? url + m[2] : undefined;
+  return authUrl ? { url, authUrl } : { url };
+}
+
+/** Extract the ready URL from one dsh stdout line, or null (legacy accessor). */
+export function parseUrlLine(line: string): string | null {
+  return parseReadyLine(line)?.url ?? null;
+}
+
+/** Minimal WebSocket surface the Typert stream opener needs (ws-compatible). */
+export interface StreamWebSocket {
+  on(event: string, listener: (...args: any[]) => void): unknown;
+  send(data: string): unknown;
+  terminate(): void;
+}
+
+export type StreamWebSocketCtor = new (url: string, opts?: { headers?: Record<string, string> }) => StreamWebSocket;
+
+/**
+ * Open one Typert Remote STREAM over the /api/remote.mux WebSocket and resolve
+ * with its first item frame (or reject on stream error). Used for
+ * `workspace/follow`, whose baseline frame carries what pre-0.1.2 `workspace.list`
+ * returned ({items, archivedSessionIds}) — 0.1.2 has no unary workspace list.
+ * @param wsCtor - WebSocket implementation (injectable for tests).
+ * @param cookie - browser-session cookie (name=value) minted at start.
+ */
+export function openStreamFirstFrame(
+  wsCtor: StreamWebSocketCtor,
+  url: string,
+  cookie: string | undefined,
+  endpoint: string,
+  args: Record<string, unknown>,
+  timeoutMs = 8000
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let ws: StreamWebSocket | undefined;
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      ws?.terminate();
+      reject(new Error(`dsh stream ${endpoint} timed out`));
+    }, timeoutMs);
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      try {
+        ws?.terminate();
+      } catch {
+        /* ignore */
+      }
+    };
+    try {
+      ws = new wsCtor(url, cookie ? { headers: { cookie } } : undefined);
+    } catch (err) {
+      settled = true;
+      clearTimeout(timer);
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    ws.on("open", () => {
+      ws?.send(JSON.stringify({ type: "open", streamId: `ext-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, endpoint, payload: { args } }));
+    });
+    ws.on("message", (raw: unknown) => {
+      if (settled) return;
+      let msg: { type?: string; value?: unknown; error?: { message?: string } };
+      try {
+        msg = JSON.parse(String(raw));
+      } catch (err) {
+        settled = true;
+        cleanup();
+        reject(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+      if (msg.type === "item") {
+        settled = true;
+        cleanup();
+        resolve(msg.value);
+      } else if (msg.type === "error") {
+        settled = true;
+        cleanup();
+        reject(new Error(msg.error?.message ?? `dsh stream ${endpoint} failed`));
+      }
+      // "end" before any item: the stream carried nothing.
+      if (msg.type === "end") {
+        settled = true;
+        cleanup();
+        reject(new Error(`dsh stream ${endpoint} ended without a frame`));
+      }
+    });
+    ws.on("error", (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(`dsh stream ${endpoint} failed: ${String(err)}`));
+    });
+    ws.on("close", () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`dsh stream ${endpoint} closed before a frame`));
+    });
+  });
 }
 
 /** First existing file among candidates; a `*` segment expands to ALL
@@ -162,6 +291,20 @@ function exeCandidates(base: string, platform: NodeJS.Platform): string[] {
 }
 
 /**
+ * Options controlling which install locations resolveDshPath probes.
+ */
+export interface ResolveDshPathOptions {
+  /**
+   * Probe system-level install locations too: the live `npm prefix -g` bin
+   * and the well-known /opt/homebrew/bin and /usr/local/bin (default true).
+   * Pass false to resolve purely under `home` — needed by unit tests, which
+   * inject a temp home but cannot remove a real global dsh from the machine
+   * (it would otherwise shadow every home-scoped candidate).
+   */
+  systemPaths?: boolean;
+}
+
+/**
  * Resolve the dsh binary. Order: $DSH_BIN → npm global → common locations →
  * nvm → npx cache. Platform-aware (Windows npm shims live in %AppData%\npm
  * as `dsh.cmd` and the npx cache under %LocalAppData%\npm-cache). Returns
@@ -169,20 +312,23 @@ function exeCandidates(base: string, platform: NodeJS.Platform): string[] {
  * `tried` in the error message.
  * @param home - home directory to scan (injectable for tests).
  * @param platform - target platform (injectable for tests).
+ * @param opts - resolution options (injectable for tests).
  */
 export function resolveDshPath(
   home: string = os.homedir(),
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  opts: ResolveDshPathOptions = {}
 ): { path: string | null; tried: string[] } {
   const isWin = platform === "win32";
-  const prefix = npmGlobalPrefix();
+  const includeSystem = opts.systemPaths !== false;
+  const prefix = includeSystem ? npmGlobalPrefix() : "";
   const globalDir = isWin ? prefix : prefix ? path.join(prefix, "bin") : "";
 
   const candidates = [
     ...exeCandidates(process.env.DSH_BIN ?? "", platform),
-    ...(globalDir ? exeCandidates(path.join(globalDir, "dsh"), platform) : []),
-    ...(!isWin ? exeCandidates(path.join("/opt/homebrew/bin", "dsh"), platform) : []),
-    ...(!isWin ? exeCandidates(path.join("/usr/local/bin", "dsh"), platform) : []),
+    ...(includeSystem && globalDir ? exeCandidates(path.join(globalDir, "dsh"), platform) : []),
+    ...(includeSystem && !isWin ? exeCandidates(path.join("/opt/homebrew/bin", "dsh"), platform) : []),
+    ...(includeSystem && !isWin ? exeCandidates(path.join("/usr/local/bin", "dsh"), platform) : []),
     ...exeCandidates(path.join(home, ".npm-global/bin", "dsh"), platform),
     ...(!isWin ? exeCandidates(path.join(home, ".nvm/versions/node/*/bin/dsh"), platform) : []),
     ...exeCandidates(
@@ -217,6 +363,12 @@ export class DshServerManager extends EventEmitter {
   private startSettled = false;
   private startResolve?: (url: string) => void;
   private startReject?: (err: Error) => void;
+  /** Full launch line URL including ?token= (0.1.2+); undefined on older dsh. */
+  private authUrl?: string;
+  /** Browser-session cookie (name=value) minted from the launch token. */
+  private authCookie?: string;
+  /** WebSocket implementation for Typert stream opens (injectable for tests). */
+  private wsCtor: StreamWebSocketCtor = WebSocket as unknown as StreamWebSocketCtor;
 
   get state(): ServerState {
     return this._state;
@@ -224,6 +376,19 @@ export class DshServerManager extends EventEmitter {
 
   get serverUrl(): string | undefined {
     return this.url;
+  }
+
+  /** Browser-session cookie (name=value) minted at start (0.1.2+ auth), or undefined. */
+  get authCookieHeader(): string | undefined {
+    return this.authCookie;
+  }
+
+  /**
+   * URL for a REAL browser tab ("Open View"): carries the launch token so the
+   * browser can mint its own cookie. The base serverUrl alone would 401.
+   */
+  get browserUrl(): string | undefined {
+    return this.authUrl ?? this.url;
   }
 
   /** dsh CLI version resolved at start (undefined until a start ran / on failure). */
@@ -271,8 +436,22 @@ export class DshServerManager extends EventEmitter {
     console.log(`[dsh] start() called: bin=${bin} prevState=${this._state} cwd=${cwd}`);
     this.emit("log", `spawning ${bin} (version=${version ?? "?"}, cwd=${cwd}, tried=[${resolved.tried.join(", ")}])`);
 
+    // Version floor: dsh 0.1.2-rc.1 reworked the Web surface (launch-token
+    // cookie auth, Typert namespace/method RPC, new dist layout). Older CLIs
+    // speak the pre-0.1.2 surface the extension no longer supports — fail
+    // loudly instead of booting into a half-broken state.
+    if (version && VERSION_RE.test(version.trim()) && compareVersions(version, MIN_DSH_VERSION) < 0) {
+      const msg = `dsh ${version} is not supported — DeepSeek Harness for VS Code requires dsh ${MIN_DSH_VERSION} or newer. Upgrade with: npm i -g @deepseek-ai/dsh@latest`;
+      console.log(`[dsh] ${msg}`);
+      this.emit("log", msg);
+      this.setState("error", { message: msg });
+      return Promise.reject(new Error(msg));
+    }
+
     this.stdoutBuffer = "";
     this.url = undefined;
+    this.authUrl = undefined;
+    this.authCookie = undefined;
     this.startSettled = false;
     this.setState("starting");
 
@@ -305,8 +484,8 @@ export class DshServerManager extends EventEmitter {
 
       child.stdout?.on("data", (chunk: Buffer) => {
         this.stdoutBuffer += chunk.toString();
-        const url = parseUrlLine(this.stdoutBuffer);
-        if (url) this.settleReady(url);
+        const parsed = parseReadyLine(this.stdoutBuffer);
+        if (parsed) this.onReadyLine(parsed);
       });
       child.stderr?.on("data", (chunk: Buffer) => {
         this.emit("stderr", chunk.toString());
@@ -347,6 +526,81 @@ export class DshServerManager extends EventEmitter {
     });
   }
 
+  /**
+   * A ready line arrived. When the 0.1.2+ launch line carries ?token=, mint
+   * the browser-session cookie BEFORE declaring ready, so every consumer
+   * (panel assembly, bridge relay, host RPC) already holds it. A failed
+   * exchange does not block readiness — the manager degrades to cookie-less
+   * mode and the caller surfaces the resulting 401s.
+   */
+  private onReadyLine(parsed: { url: string; authUrl?: string }): void {
+    if (this.startSettled) return;
+    if (parsed.authUrl) {
+      this.authUrl = parsed.authUrl;
+      void this.completeStartWithAuth(parsed.url);
+    } else {
+      this.settleReady(parsed.url);
+    }
+  }
+
+  private async completeStartWithAuth(base: string): Promise<void> {
+    const authUrl = this.authUrl;
+    if (!authUrl) {
+      this.settleReady(base);
+      return;
+    }
+    await this.exchangeCookie(authUrl);
+    this.settleReady(base);
+  }
+
+  /**
+   * Exchange the launch token for the authority-bound browser-session cookie:
+   * `GET /?token=<launchToken>` responds 303 with Set-Cookie (mint). Uses
+   * node:http (not fetch) because fetch's redirect:"manual" returns an
+   * opaque-redirect response whose headers are unreadable. Best-effort — a
+   * failure only logs and leaves the manager cookie-less.
+   */
+  private exchangeCookie(authUrl: string): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      let req: http.ClientRequest;
+      try {
+        const u = new URL(authUrl);
+        req = http.get(
+          { hostname: u.hostname, port: u.port, path: `${u.pathname}${u.search}`, headers: { "user-agent": "dsh-vscode-extension" } },
+          (res) => {
+            res.resume(); // drain; we only need the Set-Cookie header
+            const setCookies = res.headers["set-cookie"];
+            const first = Array.isArray(setCookies) ? setCookies[0] : setCookies;
+            if (typeof first === "string" && first.includes("=")) {
+              this.authCookie = first.split(";", 1)[0];
+              console.log(`[dsh] browser-session cookie minted (authority=${u.host})`);
+            } else {
+              console.log(`[dsh] cookie exchange: no set-cookie on ${res.statusCode} (auth url malformed?)`);
+            }
+            done();
+          }
+        );
+        req.setTimeout(5000, () => {
+          req.destroy();
+          done();
+        });
+        req.on("error", (err) => {
+          console.log(`[dsh] cookie exchange failed: ${err.message}`);
+          done();
+        });
+      } catch (err) {
+        console.log(`[dsh] cookie exchange failed: ${err instanceof Error ? err.message : String(err)}`);
+        done();
+      }
+    });
+  }
+
   private settleReady(url: string): void {
     if (this.startSettled) return;
     this.startSettled = true;
@@ -372,33 +626,59 @@ export class DshServerManager extends EventEmitter {
   }
 
   /**
-   * One RPC call with the client-request envelope (spike-verified, see
-   * ensureWorkspaceSession doc). Node has no browser headers, so the /api
-   * trust fence passes. Throws with the DSH error `code` attached when the
+   * One Typert unary RPC call: POST /api/<namespace>/<method> with the
+   * client-request envelope whose payload wraps the named call arguments as
+   * { args } (0.1.2+ wire shape; pre-0.1.2 sent the args flat under a dot
+   * method and is no longer supported). Attaches the browser-session cookie
+   * minted at start. Throws with the DSH error `code` attached when the
    * result is not ok.
    */
-  private async api(method: string, payload: Record<string, unknown>): Promise<any> {
+  private async api(endpoint: string, args: Record<string, unknown>): Promise<any> {
     const base = this.url;
     if (!base) throw new Error("dsh is not ready");
-    const res = await fetch(`${base}/api/${method}`, {
+    const res = await fetch(`${base}/api/${endpoint}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(this.authCookie ? { cookie: this.authCookie } : {}),
+      },
       body: JSON.stringify({
         type: "client-request",
         rpcId: `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        method,
-        payload,
+        method: endpoint,
+        payload: { args },
       }),
     });
     const body: any = await res.json();
     if (!body?.result?.ok) {
       const err: Error & { code?: string } = new Error(
-        `${method} failed: ${body?.result?.error?.message ?? "unknown"}`
+        `${endpoint} failed: ${body?.result?.error?.message ?? "unknown"}`
       );
       err.code = body?.result?.error?.code ?? undefined;
       throw err;
     }
     return body.result.value;
+  }
+
+  /**
+   * Snapshot every DSH workspace + archived session ids. 0.1.2 has no unary
+   * "workspace.list": the live `workspace/follow` stream's first frame is a
+   * baseline {items, archivedSessionIds} (the pre-0.1.2 workspace.list shape).
+   * Test seam: override workspaceSnapshot in unit tests (JS).
+   */
+  async workspaceSnapshot(): Promise<WorkspaceSnapshot> {
+    const base = this.url;
+    if (!base) throw new Error("dsh is not ready");
+    const frame = await openStreamFirstFrame(this.wsCtor, `${base}/api/remote.mux`, this.authCookie, "workspace/follow", {});
+    const baseline = (frame as { type?: string; value?: WorkspaceSnapshot } | undefined)?.value;
+    if (!baseline) throw new Error("workspace/follow baseline missing");
+    return baseline;
+  }
+
+  /** session.list rows (0.1.2: empty `_request` object, rows carry projections). */
+  private async listSessions(): Promise<any[]> {
+    const value = await this.api("session/list", { _request: {} });
+    return (value?.items ?? []) as any[];
   }
 
   /**
@@ -414,22 +694,22 @@ export class DshServerManager extends EventEmitter {
    */
   async ensureWorkspaceSession(cwd: string): Promise<string> {
     // 1. Find an existing workspace whose path matches (realpath-normalized).
-    const ws = await this.api("workspace.list", {});
-    const target = (ws.items ?? []).find((w: any) => sameFsPath(w.path, cwd));
-    const workspace = target ?? (await this.api("workspace.create", { path: cwd })).workspace;
+    const snap = await this.workspaceSnapshot();
+    const target = snap.items.find((w) => sameFsPath(w.path, cwd));
+    const workspace = target ?? (await this.api("workspace/create", { request: { path: cwd } })).workspace;
     // Reuse ANY bound, non-archived session (blank included): previously we
     // skipped blank sessions, so every ready cycle created a new one when the
     // user had never chatted — accumulating a pile of same-titled sessions
     // (F5 finding, 2026-08-19). New sessions are created explicitly via the
     // sidebar's ＋New session button.
-    const archivedSet = new Set<string>(ws.archivedSessionIds ?? []);
-    const { items: sessions } = await this.api("session.list", {});
+    const archivedSet = new Set<string>(snap.archivedSessionIds ?? []);
+    const sessions = await this.listSessions();
     const bound = sessions.find(
       (s: any) => workspace.sessionIds.includes(s.sessionId) && !archivedSet.has(s.sessionId)
     );
     if (bound) return bound.sessionId;
     // 2. No usable session yet — create one bound to this workspace.
-    return (await this.api("session.create", { workspaceId: workspace.workspaceId })).sessionId;
+    return (await this.api("session/create", { request: { workspaceId: workspace.workspaceId } })).sessionId;
   }
 
   /**
@@ -441,31 +721,33 @@ export class DshServerManager extends EventEmitter {
   async listWorkspaceSessions(
     cwd: string
   ): Promise<{ items: SessionSummary[]; archivedItems: SessionSummary[] }> {
-    const ws = await this.api("workspace.list", {});
-    const target = (ws.items ?? []).find((w: any) => sameFsPath(w.path, cwd));
+    const snap = await this.workspaceSnapshot();
+    const target = snap.items.find((w) => sameFsPath(w.path, cwd));
     if (!target) return { items: [], archivedItems: [] };
     const ids = new Set<string>(target.sessionIds ?? []);
     // DSH's archive is append-only (archivedSessionIds) and does NOT remove
     // the session from workspace.sessionIds — hide archived ones from the
     // active list ourselves so the sidebar's recycle bin behaves as expected.
-    const archivedSet = new Set<string>(ws.archivedSessionIds ?? []);
-    const list = await this.api("session.list", {});
+    const archivedSet = new Set<string>(snap.archivedSessionIds ?? []);
+    const list = await this.listSessions();
     const toSummary = (s: any): SessionSummary => ({
       sessionId: s.sessionId,
       updatedAt: s.updatedAt,
       running: s.running,
       blank: s.blank,
       cwd: s.cwd,
-      agentPreset: s.agentPreset,
+      // 0.1.2 moved agentPreset into projections.values (create returns it
+      // top-level, list rows do not) — read either home defensively.
+      agentPreset: s.projections?.values?.agentPreset ?? s.agentPreset,
       title: s.projections?.values?.title ?? null,
     });
-    const items: SessionSummary[] = (list.items ?? [])
+    const items: SessionSummary[] = list
       // Every ACTIVE session of this workspace, blank or not — blank ones are
       // labelled "New Session" (with the row's relative time to tell them
       // apart) on the UI side, so nothing is hidden (user preference).
       .filter((s: any) => ids.has(s.sessionId) && !archivedSet.has(s.sessionId))
       .map(toSummary);
-    const archivedItems: SessionSummary[] = (list.items ?? [])
+    const archivedItems: SessionSummary[] = list
       .filter((s: any) => ids.has(s.sessionId) && archivedSet.has(s.sessionId))
       .map(toSummary);
     return { items, archivedItems };
@@ -473,31 +755,31 @@ export class DshServerManager extends EventEmitter {
 
   /** Create a session bound to a workspace; returns the new sessionId. */
   async createSession(workspaceId: string): Promise<string> {
-    const value = await this.api("session.create", { workspaceId });
+    const value = await this.api("session/create", { request: { workspaceId } });
     return value.sessionId;
   }
 
   /** Workspace id for `cwd`, creating the workspace when missing. */
   async workspaceIdFor(cwd: string): Promise<string> {
-    const ws = await this.api("workspace.list", {});
-    const target = (ws.items ?? []).find((w: any) => sameFsPath(w.path, cwd));
+    const snap = await this.workspaceSnapshot();
+    const target = snap.items.find((w) => sameFsPath(w.path, cwd));
     if (target) return target.workspaceId;
-    const created = await this.api("workspace.create", { path: cwd });
+    const created = await this.api("workspace/create", { request: { path: cwd } });
     return created.workspace.workspaceId;
   }
 
-  /** Rename a session (session.rename); throws with code "title-invalid" on rejection. */
+  /** Rename a session (session/rename); throws with code "title-invalid" on rejection. */
   async renameSession(sessionId: string, title: string): Promise<{ title: string; seq: number }> {
-    const value = await this.api("session.rename", { sessionId, title });
+    const value = await this.api("session/rename", { request: { sessionId, title } });
     return { title: value.title, seq: value.seq };
   }
 
   /**
-   * Archive a session (workspace.archiveSession): it leaves the workspace's
+   * Archive a session (workspace/archiveSession): it leaves the workspace's
    * active list and joins archivedSessionIds. Returns the full archive set.
    */
   async archiveSession(sessionId: string): Promise<string[]> {
-    const value = await this.api("workspace.archiveSession", { sessionId });
+    const value = await this.api("workspace/archiveSession", { request: { sessionId } });
     return value.archivedSessionIds ?? [];
   }
 

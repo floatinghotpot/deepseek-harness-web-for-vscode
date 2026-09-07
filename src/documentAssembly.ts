@@ -31,6 +31,8 @@ export interface AssembleOptions {
   sessionPreset?: string;
   /** Extra markup injected before </body> (e.g. the server-status overlay). */
   chromeHtml?: string;
+  /** dsh 0.1.2+ browser-session cookie (name=value); / requires it or 401. */
+  cookie?: string;
   fetchImpl?: typeof fetch;
   log?: (msg: string) => void;
 }
@@ -41,15 +43,19 @@ export interface Assembled {
   downloaded: boolean;
 }
 
-const ASSET_REF_RE = /(src|href)="(\/assets\/[^"]+)"/g;
-const CSS_URL_RE = /url\(\s*["']?(\/assets\/[^)"']+)["']?\s*\)/g;
+// Asset references changed shape in dsh 0.1.2-rc.1: the dist index carries
+// <base href="/"> and references its own assets RELATIVELY ("./assets/...",
+// "./manifest.webmanifest", CSS url("./fonts/...")). Older dists used the
+// absolute "/assets/..." forms. Every matcher below accepts both.
+const ASSET_REF_RE = /(src|href)="((?:\.\/)?\/?assets\/[^"]+)"/g;
+const CSS_URL_RE = /url\(\s*["']?([^)"']+)["']?\s*\)/g;
 const SHELL_IMPORT_RE = /\.\/((?:vendor|langs)\/[A-Za-z0-9_.-]+\.js)/g;
 // Boot manifest injection changed shape between rc.8 (`window.__DSH_BOOT__ =`)
 // and 0.1.1-rc.2 (`globalThis["__DSH_BOOT__"] =`). Match either prefix; the
 // capture runs to the closing `</script>`.
 const BOOT_RE = /(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])\s*=\s*(\{.*?\})<\/script>/s;
 const REV_RE = /"rev"\s*:\s*"([^"]+)"/;
-const SERVER_STATIC_RE = /(src|href)="\/(manifest\.webmanifest|favicon\.svg)"/g;
+const SERVER_STATIC_RE = /(src|href)="(?:\.\/)?\/?(manifest\.webmanifest|favicon\.svg)"/g;
 // DSH boot-manifest preloads: injectBootManifest (dsh-client-modules >= rc.8)
 // emits blocking <script src="/plugins/..."> tags for @deepseek-ai/dsh-client-modules
 // and @deepseek-ai/dsh-client-runtime before window.__DSH_BOOT__. They are
@@ -59,17 +65,57 @@ const SERVER_STATIC_RE = /(src|href)="\/(manifest\.webmanifest|favicon\.svg)"/g;
 // ("Failed to load plugins / HTML did not preload .../client.js").
 const PLUGIN_PRELOAD_RE = /(src|href)="(\/plugins\/[^"]+)"/g;
 
+/**
+ * Normalize an index asset reference ("./assets/x.js", "/assets/x.js",
+ * "assets/x.js") to the server asset path "/assets/x.js". Returns null for
+ * anything outside /assets or with ".." segments.
+ */
+function serverAssetPath(ref: string): string | null {
+  const clean = ref.replace(/^\.\//, "");
+  if (!clean.startsWith("/")) return clean.startsWith("assets/") ? `/${clean}` : null;
+  if (!clean.startsWith("/assets/")) return null;
+  if (clean.split("/").some((seg) => seg === ".." || seg === ".")) return null;
+  return clean;
+}
+
+/**
+ * Resolve one CSS url() reference against the CSS file's server path
+ * ("/assets/x.css" -> dir "/assets"); Vite emits "./fonts/..." relative refs.
+ * Returns the server asset path when the target stays inside /assets.
+ */
+function resolveCssUrlRef(cssServerPath: string, ref: string): string | null {
+  if (ref.startsWith("data:") || ref.startsWith("http:") || ref.startsWith("https:")) return null;
+  const dir = cssServerPath.slice(0, cssServerPath.lastIndexOf("/"));
+  const abs = ref.startsWith("/") ? ref : `${dir}/${ref}`;
+  const parts: string[] = [];
+  for (const seg of abs.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (parts.length === 0) return null; // escapes above the root
+      parts.pop();
+      continue;
+    }
+    parts.push(seg);
+  }
+  if (parts[0] !== "assets") return null; // css assets live under /assets
+  return `/${parts.join("/")}`;
+}
+
 /** Extract the boot manifest rev from index.html ("" when absent). */
 export function extractRev(html: string): string {
   const m = html.match(REV_RE);
   return m ? m[1] : "";
 }
 
-/** Rewrite the boot graph's plugin URLs to absolute server URLs (F14). */
+/**
+ * Rewrite the boot graph's plugin URLs to absolute server URLs (F14).
+ * Since 0.1.2-rc.1 the manifest also carries a `batches` array
+ * ({phase, url: "/plugins/??...", ...}) whose urls need the same treatment.
+ */
 export function rewriteBootPluginUrls(html: string, serverBase: string): string {
   const m = html.match(BOOT_RE);
   if (!m) return html;
-  let graph: { entries?: { url?: string }[] };
+  let graph: { entries?: { url?: string }[]; batches?: { url?: string }[] };
   try {
     graph = JSON.parse(m[1]);
   } catch {
@@ -77,6 +123,9 @@ export function rewriteBootPluginUrls(html: string, serverBase: string): string 
   }
   for (const entry of graph.entries ?? []) {
     if (entry.url?.startsWith("/")) entry.url = serverBase + entry.url;
+  }
+  for (const batch of graph.batches ?? []) {
+    if (batch.url?.startsWith("/")) batch.url = serverBase + batch.url;
   }
   const next = JSON.stringify(graph).replaceAll("<", "\\u003c");
   return html.replace(m[1], next);
@@ -123,9 +172,14 @@ let distDownloadInFlight: Promise<void> | undefined;
 export async function assembleDocument(opts: AssembleOptions): Promise<Assembled> {
   const { serverBase, distRootPath, asWebviewUri, bridgeClientJs, cspSource, themeDark, chromeHtml, log } = opts;
   const fetchImpl = opts.fetchImpl ?? fetch;
+  const cookie = opts.cookie;
   const logf = log ?? (() => {});
+  // Every server fetch carries the browser-session cookie when one was minted
+  // (dsh 0.1.2+); without it / (and any fenced path) answers 401.
+  const doFetch = (url: string): Promise<Response> =>
+    fetchImpl(url, cookie ? { headers: { cookie } } : undefined);
 
-  const indexRes = await fetchImpl(serverBase + "/");
+  const indexRes = await doFetch(serverBase + "/");
   if (!indexRes.ok) throw new Error(`failed to fetch ${serverBase}/ (HTTP ${indexRes.status})`);
   const indexHtml = await indexRes.text();
   const rev = extractRev(indexHtml);
@@ -140,7 +194,7 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
         logf(`dist rev changed (${cached || "none"} -> ${rev}); re-downloading`);
         fs.rmSync(distRootPath, { recursive: true, force: true });
         fs.mkdirSync(distRootPath, { recursive: true });
-        await downloadTree(serverBase, distRootPath, indexHtml, asWebviewUri, fetchImpl, logf);
+        await downloadTree(serverBase, distRootPath, indexHtml, asWebviewUri, doFetch, logf);
         fs.writeFileSync(revFile, rev);
       })().finally(() => {
         distDownloadInFlight = undefined;
@@ -151,9 +205,16 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
     downloaded = true;
   }
 
-  const localAsset = (url: string) => asWebviewUri(path.join(distRootPath, url));
   let html = indexHtml;
-  html = html.replace(ASSET_REF_RE, (_m, attr: string, url: string) => `${attr}="${localAsset(url)}"`);
+  // Asset refs (module script, modulepreload, stylesheets): local webview
+  // URIs, whether the dist wrote "/assets/x" (pre-0.1.2) or "./assets/x" with
+  // <base href="/"> (0.1.2+). The local tree also serves the <base>-relative
+  // refs as webview resources.
+  html = html.replace(ASSET_REF_RE, (m, attr: string, ref: string) => {
+    const srv = serverAssetPath(ref);
+    if (!srv) return m;
+    return `${attr}="${asWebviewUri(path.join(distRootPath, srv))}"`;
+  });
   html = html.replace(SERVER_STATIC_RE, (_m, attr: string, name: string) => `${attr}="${serverBase}/${name}"`);
   html = rewriteBootPluginUrls(html, serverBase);
   html = rewriteBootPluginPreloads(html, serverBase);
@@ -172,18 +233,25 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
   return { html, distRev: rev, downloaded };
 }
 
-/** Download the /assets tree, rewriting CSS font URLs to local webview URIs. */
+/**
+ * Download the /assets tree, rewriting CSS url() references (absolute
+ * "/assets/..." pre-0.1.2, relative "./fonts/..." since 0.1.2) to local
+ * webview URIs. `fetchOne` already carries the session cookie when one exists.
+ */
 async function downloadTree(
   serverBase: string,
   distRootPath: string,
   indexHtml: string,
   asWebviewUri: (absPath: string) => string,
-  fetchImpl: typeof fetch,
+  fetchOne: (url: string) => Promise<Response>,
   log: (msg: string) => void
 ): Promise<void> {
   const queue: string[] = [];
   const seen = new Set<string>();
-  for (const m of indexHtml.matchAll(ASSET_REF_RE)) queue.push(m[2]);
+  for (const m of indexHtml.matchAll(ASSET_REF_RE)) {
+    const srv = serverAssetPath(m[2]);
+    if (srv) queue.push(srv);
+  }
 
   while (queue.length > 0) {
     const url = queue.shift()!;
@@ -195,7 +263,7 @@ async function downloadTree(
     }
     const fsPath = path.join(distRootPath, url);
     fs.mkdirSync(path.dirname(fsPath), { recursive: true });
-    const res = await fetchImpl(serverBase + url);
+    const res = await fetchOne(serverBase + url);
     if (!res.ok) {
       log(`skip ${url} (HTTP ${res.status})`);
       continue;
@@ -206,8 +274,9 @@ async function downloadTree(
     if (url.endsWith(".css")) {
       let text = buf.toString("utf8");
       let rewritten = false;
-      text = text.replace(CSS_URL_RE, (_m, asset: string) => {
-        if (!asset.startsWith("/assets/") || asset.includes("..")) return _m; // leave unsafe refs untouched
+      text = text.replace(CSS_URL_RE, (m, ref: string) => {
+        const asset = resolveCssUrlRef(url, ref.trim());
+        if (!asset) return m; // data:/http: or outside /assets — leave untouched
         rewritten = true;
         queue.push(asset); // ensure the font/image is downloaded too
         return `url(${asWebviewUri(path.join(distRootPath, asset))})`;

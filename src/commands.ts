@@ -30,7 +30,9 @@ export function registerCommands(
       vscode.window.showInformationMessage("DeepSeek Harness stopped.");
     }),
     vscode.commands.registerCommand("deepseek-harness-for-vscode.openBrowser", async () => {
-      const url = manager.serverUrl;
+      // dsh 0.1.2+ needs the launch token in the URL for a real browser to
+      // mint its session cookie; the bare server URL would 401.
+      const url = manager.browserUrl ?? manager.serverUrl;
       if (!url) {
         vscode.window.showWarningMessage(t("command.notRunning"));
         return;

@@ -20,15 +20,24 @@ export interface HttpResponseMsg {
   body: ArrayBuffer;
 }
 
-/** Relay one http request to the server; returns the response payload. */
+/**
+ * Relay one http request to the server; returns the response payload.
+ * `cookie` (dsh 0.1.2+ browser-session cookie, name=value) is attached unless
+ * the webview already sent one — the embedded page is cookie-less, and /api
+ * requests are 401 without it.
+ */
 export async function relayHttp(
   serverBase: string,
   msg: HttpRequestMsg,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  cookie?: string
 ): Promise<HttpResponseMsg> {
   const res = await fetchImpl(serverBase + msg.url, {
     method: msg.method,
-    headers: msg.headers,
+    headers: {
+      ...msg.headers,
+      ...(cookie && !msg.headers?.cookie ? { cookie } : {}),
+    },
     body: msg.body as never, // bridge boundary: string | ArrayBuffer
   });
   const buf = await res.arrayBuffer();
@@ -52,12 +61,15 @@ export class WsRelay {
 
   constructor(
     private post: (msg: unknown) => void,
-    private resolveBase: () => string
+    private resolveBase: () => string,
+    /** dsh 0.1.2+ browser-session cookie (name=value); upgrades need it or 401. */
+    private resolveCookie?: () => string | undefined
   ) {}
 
   open(id: number, path: string): void {
     if (this.sockets.has(id)) return;
-    const ws = new WebSocket(this.resolveBase() + path);
+    const cookie = this.resolveCookie?.();
+    const ws = new WebSocket(this.resolveBase() + path, cookie ? { headers: { cookie } } : undefined);
     this.sockets.set(id, ws);
     ws.on("open", () => this.post({ type: "ws-open-res", id, ok: true }));
     ws.on("message", (data) => this.post({ type: "ws-frame", id, data: data.toString() }));

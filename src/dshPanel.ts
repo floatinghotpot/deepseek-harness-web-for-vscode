@@ -139,7 +139,11 @@ export class DshPanel {
     // Tab icon: WebviewPanel.iconPath is a settable property (unlike options).
     panel.iconPath = vscode.Uri.file(path.join(this.context.extensionUri.fsPath, "media", "icon.png"));
     this.panel = panel;
-    this.bridge = new BridgeHost(panel.webview, () => this.manager.serverUrl ?? "");
+    this.bridge = new BridgeHost(
+      panel.webview,
+      () => this.manager.serverUrl ?? "",
+      () => this.manager.authCookieHeader
+    );
 
     // View-level commands from the placeholder/overlay chrome.
     panel.webview.onDidReceiveMessage((msg) => {
@@ -208,6 +212,9 @@ export class DshPanel {
       const webview = this.panel.webview;
       const { html } = await assembleDocument({
         serverBase: url,
+        // dsh 0.1.2+ serves / behind the browser-session cookie; without it the
+        // index fetch (and any fenced asset) returns 401 and the panel errors.
+        cookie: this.manager.authCookieHeader,
         distRootPath: this.distRootPath(),
         asWebviewUri: (p) => webview.asWebviewUri(vscode.Uri.file(p)).toString(),
         bridgeClientJs: bridgeJs,

@@ -22,6 +22,7 @@ test("relayHttp forwards a POST and returns status/headers/binary body", async (
   const server = http.createServer((req, res) => {
     assert.equal(req.method, "POST");
     assert.equal(req.url, "/api/ping");
+    assert.equal(req.headers.cookie, undefined, "no cookie by default");
     res.writeHead(200, { "content-type": "application/json" });
     res.end(Buffer.from([0x7b, 0x7d])); // "{}"
   });
@@ -42,6 +43,48 @@ test("relayHttp forwards a POST and returns status/headers/binary body", async (
   assert.equal(out.status, 200);
   assert.equal(out.headers["content-type"], "application/json");
   assert.deepEqual(Buffer.from(out.body).toString(), "{}");
+});
+
+test("relayHttp attaches the dsh 0.1.2 browser-session cookie", async (t) => {
+  let seenCookie;
+  const server = http.createServer((req, res) => {
+    seenCookie = req.headers.cookie;
+    res.writeHead(200);
+    res.end("ok");
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  t.after(() => server.close());
+  const { port } = server.address();
+
+  const out = await relayHttp(
+    `http://127.0.0.1:${port}`,
+    { type: "http", id: 1, method: "GET", url: "/api/x", headers: { "content-type": "application/json" } },
+    fetch,
+    "dsh-auth-test=v1.sig"
+  );
+  assert.equal(out.status, 200);
+  assert.equal(seenCookie, "dsh-auth-test=v1.sig");
+});
+
+test("WsRelay carries the browser-session cookie on the upgrade (0.1.2 auth)", async (t) => {
+  let seenCookie;
+  const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await new Promise((r) => wss.once("listening", r));
+  t.after(() => wss.close());
+  const { port } = wss.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  wss.on("connection", (socket, req) => {
+    seenCookie = req.headers.cookie;
+    socket.on("message", (data) => socket.send("echo:" + data.toString()));
+  });
+
+  const posts = [];
+  const relay = new WsRelay((msg) => posts.push(msg), () => base, () => "dsh-auth-test=v1.sig");
+  relay.open(7, "/api/remote.mux");
+  await waitFor(() => posts.some((p) => p.type === "ws-open-res" && p.id === 7 && p.ok));
+  assert.equal(seenCookie, "dsh-auth-test=v1.sig");
+  relay.close(7);
 });
 
 test("relayHttp surfaces non-2xx status as a transport response (client decides)", async (t) => {

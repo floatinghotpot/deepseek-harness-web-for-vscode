@@ -4,26 +4,32 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 
-const { parseUrlLine, resolveDshPath, probeNoOpenSupport, DshServerManager, sameFsPath } = require("../out/serverManager.js");
+const { parseReadyLine, parseUrlLine, resolveDshPath, probeNoOpenSupport, DshServerManager, sameFsPath } = require("../out/serverManager.js");
 
 /**
  * Write an executable fake dsh into a temp dir (platform-aware shim).
  * opts.helpNoOpen: `web --help` advertises --no-open (rc.8+ web-app shape).
+ * opts.urlLine: stdout ready line to print (default: the bare 0.1.1-era URL;
+ * pass a `?token=...` URL to exercise the 0.1.2+ cookie exchange).
+ * opts.version: output of `--version` (default: none — unknown version).
  * opts.recordArgs: file receiving the argv of every non-help invocation,
  * so tests can assert exactly what the manager spawns.
  */
 function fakeDsh(dir, opts = {}) {
   const helpOut = opts.helpNoOpen ? `process.stdout.write("  --no-open  do not open the Web UI in the default browser\\n");\n` : "";
   const help = `if (process.argv.includes("--help")) { ${helpOut}process.exit(0); }\n`;
+  const versionOut = `if (process.argv.includes("--version")) { ${opts.version ? `process.stdout.write(${JSON.stringify(String(opts.version) + "\n")});` : ""}process.exit(0); }\n`;
   const record = opts.recordArgs
-    ? `if (!process.argv.includes("--help")) require("node:fs").writeFileSync(${JSON.stringify(opts.recordArgs)}, JSON.stringify(process.argv.slice(2)));\n`
+    ? `if (!process.argv.includes("--help") && !process.argv.includes("--version")) require("node:fs").writeFileSync(${JSON.stringify(opts.recordArgs)}, JSON.stringify(process.argv.slice(2)));\n`
     : "";
+  const urlLine = `${opts.urlLine ?? "dsh web: http://127.0.0.1:34567"}\n`;
   const body = opts.quiet
-    ? `${help}${record}setInterval(() => {}, 1000);\n`
-    : `${help}${record}process.stdout.write("dsh web: http://127.0.0.1:34567\\n");\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
+    ? `${help}${versionOut}${record}setInterval(() => {}, 1000);\n`
+    : `${help}${versionOut}${record}process.stdout.write(${JSON.stringify(urlLine)});\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
   if (process.platform === "win32") {
     // Windows: cmd.exe cannot run unix-shebang scripts; ship a .cmd wrapper.
     const impl = path.join(dir, "dsh-impl.js");
@@ -53,25 +59,55 @@ test("parseUrlLine extracts the ready URL", () => {
   assert.equal(parseUrlLine("prefix dsh web: http://127.0.0.1:3080 suffix"), "http://127.0.0.1:3080");
 });
 
+test("parseReadyLine keeps the token URL of the 0.1.2+ launch line", () => {
+  // 0.1.1-rc.7 and older: bare URL, no authUrl.
+  assert.deepEqual(parseReadyLine("dsh web: http://127.0.0.1:62750"), { url: "http://127.0.0.1:62750" });
+  // 0.1.2-rc.1: token suffix is surfaced separately (base stays token-free).
+  const line = "dsh web: http://127.0.0.1:49617/?token=g2v9gbhetT-vAVXCkAVjIdO_pdODGg7K7xi1svnTLNM";
+  assert.deepEqual(parseReadyLine(line), {
+    url: "http://127.0.0.1:49617",
+    authUrl: "http://127.0.0.1:49617/?token=g2v9gbhetT-vAVXCkAVjIdO_pdODGg7K7xi1svnTLNM",
+  });
+  assert.equal(parseUrlLine(line), "http://127.0.0.1:49617", "legacy parse still returns the base");
+  assert.equal(parseReadyLine("noise"), null);
+});
+
 test("resolveDshPath finds dsh in an injected home", (t) => {
   const home = tmpdir(t);
+  // Hermetic resolution: skip system-level probe locations (npm prefix -g
+  // bin, /opt/homebrew/bin, /usr/local/bin). A real global dsh on the
+  // machine (e.g. `npm i -g @deepseek-ai/dsh`) would otherwise be probed
+  // BEFORE the injected home and shadow every case below.
+  const HOME_ONLY = { systemPaths: false };
+  // A stray $DSH_BIN in the dev environment must not decide the outcome.
+  const savedDshBin = process.env.DSH_BIN;
+  process.env.DSH_BIN = "";
+  t.after(() => {
+    if (savedDshBin === undefined) delete process.env.DSH_BIN;
+    else process.env.DSH_BIN = savedDshBin;
+  });
 
-  // Case 1: npx cache glob.
-  const npxDir = path.join(home, ".npm", "_npx", "abc123", "node_modules", ".bin");
-  fs.mkdirSync(npxDir, { recursive: true });
-  fs.writeFileSync(path.join(npxDir, "dsh"), "");
-  assert.equal(resolveDshPath(home, "linux").path, path.join(npxDir, "dsh"));
+  // Case 1: npx cache glob (multiple versions → the newest by mtime wins).
+  const older = path.join(home, ".npm", "_npx", "aaa111", "node_modules", ".bin");
+  const newer = path.join(home, ".npm", "_npx", "bbb222", "node_modules", ".bin");
+  for (const dir of [older, newer]) fs.mkdirSync(dir, { recursive: true });
+  const oldStamp = new Date(Date.now() - 60_000);
+  const newStamp = new Date();
+  fs.writeFileSync(path.join(older, "dsh"), "");
+  fs.utimesSync(path.join(older, "dsh"), oldStamp, oldStamp);
+  fs.writeFileSync(path.join(newer, "dsh"), "");
+  fs.utimesSync(path.join(newer, "dsh"), newStamp, newStamp);
+  assert.equal(resolveDshPath(home, "linux", HOME_ONLY).path, path.join(newer, "dsh"));
 
   // Case 2: npm-global bin wins over npx cache (earlier in the order).
   const globalDir = path.join(home, ".npm-global", "bin");
   fs.mkdirSync(globalDir, { recursive: true });
   fs.writeFileSync(path.join(globalDir, "dsh"), "");
-  assert.equal(resolveDshPath(home, "linux").path, path.join(globalDir, "dsh"));
+  assert.equal(resolveDshPath(home, "linux", HOME_ONLY).path, path.join(globalDir, "dsh"));
 
-  // Case 3: nothing found → null; home-derived tried entries are "~"-redacted
-  // (machine-level candidates like npm prefix -g stay absolute).
+  // Case 3: nothing found → null; home-derived tried entries are "~"-redacted.
   const empty = tmpdir(t);
-  const res = resolveDshPath(empty, "linux");
+  const res = resolveDshPath(empty, "linux", HOME_ONLY);
   assert.equal(res.path, null);
   assert.ok(res.tried.some((p) => p.startsWith("~")));
   assert.ok(res.tried.every((p) => !p.includes(empty)));
@@ -218,6 +254,57 @@ test("stop() during the ready window settles the promise and stays stopped (no l
   assert.equal(manager.state, "stopped");
 });
 
+// --- 0.1.2+ launch-token auth and version floor ----------------------------
+
+test("start() rejects dsh below the 0.1.2-rc.1 floor with a clear message", async (t) => {
+  const dir = tmpdir(t);
+  const bin = fakeDsh(dir, { version: "0.1.1-rc.7" });
+  const manager = new DshServerManager();
+  await assert.rejects(manager.start({ dshBin: bin, cwd: dir }), /0\.1\.2-rc\.1 or newer/);
+  assert.equal(manager.state, "error");
+});
+
+test("start() accepts dsh 0.1.2-rc.1 and newer", async (t) => {
+  const dir = tmpdir(t);
+  const bin = fakeDsh(dir, { version: "0.1.2-rc.1" });
+  const manager = new DshServerManager();
+  const url = await manager.start({ dshBin: bin, cwd: dir });
+  assert.equal(url, "http://127.0.0.1:34567");
+  const exited = new Promise((r) => manager.once("exit", r));
+  manager.stop();
+  await exited;
+});
+
+test("start() mints the browser-session cookie from the ?token= launch URL", async (t) => {
+  // The fake dsh prints a 0.1.2+ launch line pointing at a fixture HTTP
+  // server that answers GET /?token=... with 303 + Set-Cookie (the mint).
+  const seen = [];
+  const mint = http.createServer((req, res) => {
+    seen.push(req.url);
+    res.writeHead(303, { location: "/", "set-cookie": "dsh-auth-test=v1.sig; Path=/; HttpOnly" });
+    res.end();
+  });
+  await new Promise((r) => mint.listen(0, "127.0.0.1", r));
+  t.after(() => mint.close());
+  const { port } = mint.address();
+
+  const dir = tmpdir(t);
+  const bin = fakeDsh(dir, { urlLine: `dsh web: http://127.0.0.1:${port}/?token=abc123` });
+  const manager = new DshServerManager();
+  const exited = new Promise((r) => manager.once("exit", r));
+  try {
+    const url = await manager.start({ dshBin: bin, cwd: dir });
+    // Base URL stays token-free; the cookie was exchanged from the token URL.
+    assert.equal(url, `http://127.0.0.1:${port}`);
+    assert.equal(manager.authCookieHeader, "dsh-auth-test=v1.sig");
+    assert.equal(manager.browserUrl, `http://127.0.0.1:${port}/?token=abc123`);
+    assert.deepEqual(seen, ["/?token=abc123"]);
+  } finally {
+    manager.stop();
+  }
+  await exited;
+});
+
 // --- session API (02-session-management T1) -------------------------------
 
 /** Mock global.fetch to serve the client-request envelope; restore afterwards. */
@@ -233,24 +320,22 @@ function mockFetch(handler) {
 function apiManager() {
   const manager = new DshServerManager();
   manager.url = "http://127.0.0.1:9999";
+  // 0.1.2 replaced the unary workspace.list with the workspace/follow stream
+  // baseline; tests stub the snapshot method directly (its own unit is the
+  // openStreamFirstFrame/wsCtor seam covered by the stream tests below).
   return manager;
 }
 
+/** The workspace/follow baseline shape a live server returns first. */
+const SNAP = (items, archivedSessionIds) => ({ items, archivedSessionIds });
+
 test("listWorkspaceSessions filters session.list to the cwd workspace", async () => {
   const manager = apiManager();
+  manager.workspaceSnapshot = async () =>
+    SNAP([{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2"] }], ["sx"]);
   const restore = mockFetch((req) => {
-    if (req.method === "workspace.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2"] }],
-            archivedSessionIds: ["sx"],
-          },
-        },
-      };
-    }
-    if (req.method === "session.list") {
+    if (req.method === "session/list") {
+      assert.deepEqual(req.payload.args, { _request: {} });
       return {
         result: {
           ok: true,
@@ -281,35 +366,19 @@ test("listWorkspaceSessions filters session.list to the cwd workspace", async ()
 
 test("listWorkspaceSessions hides archived sessions from the active list", async () => {
   const manager = apiManager();
-  const restore = mockFetch((req) => {
-    if (req.method === "workspace.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            // s2 is in the workspace's sessionIds but ALSO archived — DSH's
-            // archive is append-only, so the active list must hide it.
-            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2"] }],
-            archivedSessionIds: ["s2"],
-          },
-        },
-      };
-    }
-    if (req.method === "session.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            items: [
-              { sessionId: "s1", updatedAt: 1, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
-              { sessionId: "s2", updatedAt: 2, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
-            ],
-          },
-        },
-      };
-    }
-    throw new Error("unexpected method " + req.method);
-  });
+  manager.workspaceSnapshot = async () =>
+    SNAP([{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2"] }], ["s2"]);
+  const restore = mockFetch(() => ({
+    result: {
+      ok: true,
+      value: {
+        items: [
+          { sessionId: "s1", updatedAt: 1, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
+          { sessionId: "s2", updatedAt: 2, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: null } } },
+        ],
+      },
+    },
+  }));
   try {
     const { items, archivedItems } = await manager.listWorkspaceSessions("/ws/a");
     assert.deepEqual(items.map((s) => s.sessionId), ["s1"]);
@@ -320,36 +389,44 @@ test("listWorkspaceSessions hides archived sessions from the active list", async
   }
 });
 
+test("listWorkspaceSessions reads agentPreset from projections.values (0.1.2 rows)", async () => {
+  const manager = apiManager();
+  manager.workspaceSnapshot = async () => SNAP([{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }], []);
+  const restore = mockFetch(() => ({
+    result: {
+      ok: true,
+      value: {
+        items: [
+          // 0.1.2 session.list rows carry agentPreset nested in projections.
+          { sessionId: "s1", updatedAt: 1, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null, agentPreset: "standard" } } },
+        ],
+      },
+    },
+  }));
+  try {
+    const { items } = await manager.listWorkspaceSessions("/ws/a");
+    assert.equal(items[0].agentPreset, "standard");
+  } finally {
+    restore();
+  }
+});
+
 test("listWorkspaceSessions lists ALL active sessions including blank ones", async () => {
   const manager = apiManager();
-  const restore = mockFetch((req) => {
-    if (req.method === "workspace.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2", "s3"] }],
-            archivedSessionIds: [],
-          },
-        },
-      };
-    }
-    if (req.method === "session.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            items: [
-              { sessionId: "s1", updatedAt: 100, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
-              { sessionId: "s2", updatedAt: 200, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: "Chatted" } } },
-              { sessionId: "s3", updatedAt: 300, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
-            ],
-          },
-        },
-      };
-    }
-    throw new Error("unexpected method " + req.method);
-  });
+  manager.workspaceSnapshot = async () =>
+    SNAP([{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1", "s2", "s3"] }], []);
+  const restore = mockFetch(() => ({
+    result: {
+      ok: true,
+      value: {
+        items: [
+          { sessionId: "s1", updatedAt: 100, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
+          { sessionId: "s2", updatedAt: 200, running: false, blank: false, cwd: "/ws/a", projections: { values: { title: "Chatted" } } },
+          { sessionId: "s3", updatedAt: 300, running: false, blank: true, cwd: "/ws/a", projections: { values: { title: null } } },
+        ],
+      },
+    },
+  }));
   try {
     const { items } = await manager.listWorkspaceSessions("/ws/a");
     // Every active session is listed, blank included (blank ones show as
@@ -363,8 +440,9 @@ test("listWorkspaceSessions lists ALL active sessions including blank ones", asy
 
 test("listWorkspaceSessions returns empty when cwd has no workspace", async () => {
   const manager = apiManager();
+  manager.workspaceSnapshot = async () => SNAP([{ workspaceId: "w1", path: "/other", sessionIds: [] }], []);
   const restore = mockFetch(() => ({
-    result: { ok: true, value: { items: [{ workspaceId: "w1", path: "/other", sessionIds: [] }], archivedSessionIds: [] } },
+    result: { ok: true, value: { items: [] } },
   }));
   try {
     const { items, archivedItems } = await manager.listWorkspaceSessions("/nowhere");
@@ -375,7 +453,7 @@ test("listWorkspaceSessions returns empty when cwd has no workspace", async () =
   }
 });
 
-test("renameSession sends the envelope and returns the accepted title", async () => {
+test("renameSession sends the 0.1.2 envelope and returns the accepted title", async () => {
   const manager = apiManager();
   let sent;
   const restore = mockFetch((req) => {
@@ -386,9 +464,8 @@ test("renameSession sends the envelope and returns the accepted title", async ()
     const res = await manager.renameSession("s1", "新标题");
     assert.deepEqual(res, { title: "新标题", seq: 3 });
     assert.equal(sent.type, "client-request");
-    assert.equal(sent.method, "session.rename");
-    assert.equal(sent.payload.sessionId, "s1");
-    assert.equal(sent.payload.title, "新标题");
+    assert.equal(sent.method, "session/rename");
+    assert.deepEqual(sent.payload, { args: { request: { sessionId: "s1", title: "新标题" } } });
   } finally {
     restore();
   }
@@ -409,7 +486,7 @@ test("renameSession surfaces the DSH error code (title-invalid)", async () => {
   }
 });
 
-test("archiveSession calls workspace.archiveSession and returns the archive set", async () => {
+test("archiveSession calls workspace/archiveSession and returns the archive set", async () => {
   const manager = apiManager();
   let sent;
   const restore = mockFetch((req) => {
@@ -419,8 +496,25 @@ test("archiveSession calls workspace.archiveSession and returns the archive set"
   try {
     const archived = await manager.archiveSession("s1");
     assert.deepEqual(archived, ["s1", "s2"]);
-    assert.equal(sent.method, "workspace.archiveSession");
-    assert.deepEqual(sent.payload, { sessionId: "s1" });
+    assert.equal(sent.method, "workspace/archiveSession");
+    assert.deepEqual(sent.payload, { args: { request: { sessionId: "s1" } } });
+  } finally {
+    restore();
+  }
+});
+
+test("createSession sends workspace-bound session/create (0.1.2 wire)", async () => {
+  const manager = apiManager();
+  let sent;
+  const restore = mockFetch((req) => {
+    sent = req;
+    return { result: { ok: true, value: { sessionId: "fresh", agentPreset: "standard" } } };
+  });
+  try {
+    const id = await manager.createSession("w1");
+    assert.equal(id, "fresh");
+    assert.equal(sent.method, "session/create");
+    assert.deepEqual(sent.payload, { args: { request: { workspaceId: "w1" } } });
   } finally {
     restore();
   }
@@ -428,22 +522,12 @@ test("archiveSession calls workspace.archiveSession and returns the archive set"
 
 test("ensureWorkspaceSession reuses a blank bound session instead of creating", async () => {
   const manager = apiManager();
+  manager.workspaceSnapshot = async () =>
+    SNAP([{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }], []);
   const methods = [];
   const restore = mockFetch((req) => {
     methods.push(req.method);
-    if (req.method === "workspace.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            // s1 is bound and blank (user never chatted) — must be reused.
-            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }],
-            archivedSessionIds: [],
-          },
-        },
-      };
-    }
-    if (req.method === "session.list") {
+    if (req.method === "session/list") {
       return {
         result: {
           ok: true,
@@ -460,7 +544,7 @@ test("ensureWorkspaceSession reuses a blank bound session instead of creating", 
   try {
     const id = await manager.ensureWorkspaceSession("/ws/a");
     assert.equal(id, "s1");
-    assert.ok(!methods.includes("session.create"), "must NOT create a new session");
+    assert.ok(!methods.includes("session/create"), "must NOT create a new session");
   } finally {
     restore();
   }
@@ -468,22 +552,12 @@ test("ensureWorkspaceSession reuses a blank bound session instead of creating", 
 
 test("ensureWorkspaceSession skips archived sessions and creates a fresh one", async () => {
   const manager = apiManager();
+  manager.workspaceSnapshot = async () =>
+    SNAP([{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }], ["s1"]);
   const methods = [];
   const restore = mockFetch((req) => {
     methods.push(req.method);
-    if (req.method === "workspace.list") {
-      return {
-        result: {
-          ok: true,
-          value: {
-            // s1 is bound but ARCHIVED — must not be reused as the default.
-            items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }],
-            archivedSessionIds: ["s1"],
-          },
-        },
-      };
-    }
-    if (req.method === "session.list") {
+    if (req.method === "session/list") {
       return {
         result: {
           ok: true,
@@ -495,7 +569,7 @@ test("ensureWorkspaceSession skips archived sessions and creates a fresh one", a
         },
       };
     }
-    if (req.method === "session.create") {
+    if (req.method === "session/create") {
       return { result: { ok: true, value: { sessionId: "s2" } } };
     }
     return { result: { ok: false, error: { message: "unexpected " + req.method } } };
@@ -503,10 +577,74 @@ test("ensureWorkspaceSession skips archived sessions and creates a fresh one", a
   try {
     const id = await manager.ensureWorkspaceSession("/ws/a");
     assert.equal(id, "s2");
-    assert.ok(methods.includes("session.create"));
+    assert.ok(methods.includes("session/create"));
   } finally {
     restore();
   }
+});
+
+test("ensureWorkspaceSession creates the workspace and a bound session when none exists", async () => {
+  const manager = apiManager();
+  manager.workspaceSnapshot = async () => SNAP([], []);
+  const calls = [];
+  const restore = mockFetch((req) => {
+    calls.push({ method: req.method, args: req.payload.args });
+    if (req.method === "workspace/create") {
+      return { result: { ok: true, value: { workspace: { workspaceId: "w-new", path: "/nowhere", sessionIds: [] }, created: true } } };
+    }
+    if (req.method === "session/create") {
+      return { result: { ok: true, value: { sessionId: "s-new" } } };
+    }
+    if (req.method === "session/list") {
+      return { result: { ok: true, value: { items: [] } } };
+    }
+    return { result: { ok: false, error: { message: "unexpected " + req.method } } };
+  });
+  try {
+    const id = await manager.ensureWorkspaceSession("/nowhere");
+    assert.equal(id, "s-new");
+    assert.deepEqual(calls.map((c) => c.method), ["workspace/create", "session/list", "session/create"]);
+    assert.deepEqual(calls[0].args, { request: { path: "/nowhere" } });
+    assert.deepEqual(calls[2].args, { request: { workspaceId: "w-new" } });
+  } finally {
+    restore();
+  }
+});
+
+test("openStreamFirstFrame resolves the first item frame (workspace/follow baseline)", async () => {
+  const { openStreamFirstFrame } = require("../out/serverManager.js");
+  const instance = { sent: [], listeners: {} };
+  const FakeWS = function (url, opts) {
+    assert.equal(url, "http://127.0.0.1:9/api/remote.mux");
+    assert.equal(opts.headers.cookie, "dsh-auth-x=y", "cookie must ride the upgrade");
+  };
+  FakeWS.prototype = {
+    on(event, cb) {
+      (instance.listeners[event] = instance.listeners[event] || []).push(cb);
+      return this;
+    },
+    send(data) {
+      instance.sent.push(JSON.parse(data));
+    },
+    terminate() {},
+  };
+  const frameP = openStreamFirstFrame(FakeWS, "http://127.0.0.1:9/api/remote.mux", "dsh-auth-x=y", "workspace/follow", {});
+  // The helper only sends its `open` frame once the socket reports open; then
+  // the fake mux answers with the baseline item.
+  setImmediate(() => {
+    assert.equal(instance.sent.length, 0, "no open frame before the socket opens");
+    instance.listeners.open.forEach((cb) => cb());
+  });
+  setImmediate(() => {
+    assert.equal(instance.sent[0].type, "open");
+    assert.equal(instance.sent[0].endpoint, "workspace/follow");
+    assert.deepEqual(instance.sent[0].payload, { args: {} });
+    instance.listeners.message.forEach((cb) =>
+      cb(JSON.stringify({ type: "item", streamId: instance.sent[0].streamId, value: { type: "baseline", value: { items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }], archivedSessionIds: [] } } }))
+    );
+  });
+  const frame = await frameP;
+  assert.deepEqual(frame.value, { items: [{ workspaceId: "w1", path: "/ws/a", sessionIds: ["s1"] }], archivedSessionIds: [] });
 });
 
 test("sameFsPath matches normalized and realpath forms", (t) => {

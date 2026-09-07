@@ -210,3 +210,123 @@ test("assembleDocument omits the preset script when none is provided", async (t)
   });
   assert.ok(!html.includes('dsh.sessions.current'));
 });
+
+// --- dsh 0.1.2-rc.1 dist layout ------------------------------------------
+// The 0.1.2 index carries <base href="/"> and references its assets
+// RELATIVELY ("./assets/...", "./manifest.webmanifest"), the boot manifest
+// gains a `batches` array of /plugins/?? mux urls, and plugin preloads use
+// the "/plugins/??pkg/client.js,...&rev=" mux form.
+
+/** Serve a fake 0.1.2-rc.1-shaped dist (relative ./assets refs + batches). */
+function serveDist012(t, { requireCookie } = {}) {
+  const files = new Map([
+    ["/", `<!doctype html><html lang="en"><head><base href="/"><script>(()=>{window.__ModuleLoader__={mode:"queue",pendingQueue:[],load(){},create(){}}})()</script><link rel="preload" as="script" href="/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=cddf5581d5d5"><script src="/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=cddf5581d5d5"></script><script>globalThis["__DSH_BOOT__"] = {"rev":"revAbc","entries":[{"id":"p","url":"/plugins/??@deepseek-ai/dsh-api-gateway/client.js&amp;rev=1"}],"batches":[{"phase":"bootstrap","url":"/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=2","entries":["@deepseek-ai/dsh-client-modules"]}]}</script><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="./favicon.svg"><script type="module" crossorigin src="./assets/index-Df65b.js"></script><link rel="modulepreload" crossorigin href="./assets/vendor-CJJK.js"><link rel="stylesheet" crossorigin href="./assets/vendor-BN.css"><link rel="stylesheet" crossorigin href="./assets/index-bk.css"></head><body><div id="root"></div></body></html>`],
+    ["/assets/index-Df65b.js", `import{c}from"./vendor-CJJK.js";import("./langs/ts-DIP.js");`],
+    ["/assets/vendor-CJJK.js", "vendor-content"],
+    ["/assets/vendor-BN.css", `@font-face{font-family:KaTeX;src:url(./fonts/ka.woff2) format("woff2")}`],
+    ["/assets/index-bk.css", "body{color:red}"],
+    ["/assets/fonts/ka.woff2", Buffer.from([0, 0x66, 0x6f, 0x6e])],
+    ["/assets/langs/ts-DIP.js", "lang-content"],
+    ["/manifest.webmanifest", `{"name":"x"}`],
+    ["/favicon.svg", "<svg/>"],
+  ]);
+  const cookieSeen = [];
+  const server = http.createServer((req, res) => {
+    cookieSeen.push({ url: req.url, cookie: req.headers.cookie });
+    if (requireCookie && !req.headers.cookie) {
+      res.writeHead(401);
+      res.end("unauthorized");
+      return;
+    }
+    const body = files.get(req.url);
+    if (body === undefined) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end(body);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      t.after(() => server.close());
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        get cookieSeen() {
+          return cookieSeen;
+        },
+      });
+    });
+  });
+}
+
+test("assembleDocument handles the 0.1.2 relative ./assets layout + batches", async (t) => {
+  const server = await serveDist012(t);
+  const dist = tmpdir(t);
+
+  const { html, distRev } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "/*bridge*/",
+    cspSource: "https://*.vscode-webview.net",
+    log: () => {},
+  });
+  assert.equal(distRev, "revAbc");
+
+  // 1. Relative ./assets refs landed in the cache (fonts via relative CSS url).
+  for (const f of [
+    "assets/index-Df65b.js",
+    "assets/vendor-CJJK.js",
+    "assets/vendor-BN.css",
+    "assets/index-bk.css",
+    "assets/fonts/ka.woff2",
+    "assets/langs/ts-DIP.js",
+  ]) {
+    assert.ok(fs.existsSync(path.join(dist, f)), `missing ${f}`);
+  }
+
+  // 2. Module script + preloads rewritten to local webview URIs.
+  assert.ok(html.includes('src="vscode-webview-resource://test' + path.join(dist, "assets", "index-Df65b.js") + '"'), "module script not rewritten");
+  assert.ok(html.includes('href="vscode-webview-resource://test' + path.join(dist, "assets", "vendor-CJJK.js") + '"'), "modulepreload not rewritten");
+  assert.ok(html.includes('href="vscode-webview-resource://test' + path.join(dist, "assets", "vendor-BN.css") + '"'), "css link not rewritten");
+
+  // 3. Boot entries AND the 0.1.2 batches[].url are absolutized.
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-api-gateway/client.js&amp;rev=1"`), "entry url not absolutized");
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=2"`), "batch url not absolutized");
+
+  // 4. Plugin preloads (incl. the "/plugins/??" mux form) are absolute.
+  assert.ok(html.includes(`src="${server.url}/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=cddf5581d5d5"`), "mux preload not absolutized");
+  assert.ok(!html.includes('src="/plugins/'), "no relative /plugins/ src may remain");
+
+  // 5. ./manifest.webmanifest and ./favicon.svg point at the server.
+  assert.ok(html.includes(`href="${server.url}/manifest.webmanifest"`));
+  assert.ok(html.includes(`href="${server.url}/favicon.svg"`));
+
+  // 6. CSS url(./fonts/...) was rewritten to the local font (relative ref).
+  const css = fs.readFileSync(path.join(dist, "assets/vendor-BN.css"), "utf8");
+  assert.ok(css.includes(`url(vscode-webview-resource://test${path.join(dist, "assets", "fonts", "ka.woff2")})`));
+});
+
+test("assembleDocument sends the browser-session cookie on every server fetch", async (t) => {
+  const server = await serveDist012(t, { requireCookie: true });
+  const dist = tmpdir(t);
+
+  const { downloaded } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "",
+    cspSource: "x",
+    cookie: "dsh-auth-test=v1.sig",
+    log: () => {},
+  });
+  assert.equal(downloaded, true);
+  const seen = server.cookieSeen;
+  assert.ok(seen.length >= 2, `expected index + asset fetches, saw ${seen.length}`);
+  for (const req of seen) {
+    assert.ok(req.url === "/" || req.url.startsWith("/assets/"), `unexpected fetch ${req.url}`);
+    assert.equal(req.cookie, "dsh-auth-test=v1.sig", `cookie missing on ${req.url}`);
+  }
+});
