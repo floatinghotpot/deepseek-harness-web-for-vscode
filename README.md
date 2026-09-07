@@ -34,8 +34,20 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 
 ## Requirements
 
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) installed: `npm i -g @deepseek-ai/dsh`
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) installed — **0.1.2-rc.1 or newer**: `npm i -g @deepseek-ai/dsh` (older dsh builds speak the pre-0.1.2 API and are not supported)
 - VS Code ≥ 1.90 (the extension also works in Antigravity via Open VSX)
+
+## Version compatibility
+
+Compatible dsh versions for each dsh4vscode release — any other pairing is refused at start with a clear message:
+
+| dsh4vscode version | Compatible dsh |
+|---|---|
+| `0.3.4` (current) | `0.1.2-rc.1` |
+| `0.3.3` | `0.1.1-rc.7` and older |
+
+- dsh `0.1.2-rc.1` reworked its Web surface (browser-session authentication, Typert RPC, new dist layout), which extension `≤ 0.3.3` cannot use. Extension `0.3.4` in turn requires dsh `≥ 0.1.2-rc.1` (older builds are refused with an upgrade hint), so an old dsh must pair with `0.3.3` or earlier.
+- No hard cap on newer dsh versions, but dsh moves fast — give the embedded panel one regression check after upgrading dsh.
 
 ## Install
 

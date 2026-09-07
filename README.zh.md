@@ -34,8 +34,20 @@
 
 ## 环境要求
 
-- 已安装 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：`npm i -g @deepseek-ai/dsh`
+- 已安装 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)——**0.1.2-rc.1 或更新**：`npm i -g @deepseek-ai/dsh`（更旧的 dsh 走 pre-0.1.2 API，不受支持）
 - VS Code ≥ 1.90（通过 Open VSX 亦可用于 Antigravity）
+
+## 版本兼容性
+
+各 dsh4vscode 版本配套的兼容 dsh 版本——其余搭配会在启动时被明确拒绝：
+
+| dsh4vscode 版本 | 兼容的 dsh 版本 |
+|---|---|
+| `0.3.4`（当前） | `0.1.2-rc.1` |
+| `0.3.3` | `0.1.1-rc.7` 及更早 |
+
+- dsh `0.1.2-rc.1` 起更换了 Web 表面（浏览器会话认证、Typert RPC、新 dist 布局），扩展 `≤ 0.3.3` 无法使用它；扩展 `0.3.4` 又要求 dsh `≥ 0.1.2-rc.1`（更旧会在启动时提示升级），因此旧 dsh 需搭配 `0.3.3` 及更早。
+- 对更新的 dsh 版本未设硬上限，但上游迭代快——升级 dsh 后建议回归一次内嵌面板。
 
 ## 安装
 

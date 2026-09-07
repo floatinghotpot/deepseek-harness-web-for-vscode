@@ -7,6 +7,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-09-07
+
+### Fixed
+- **Works with dsh 0.1.2-rc.1** — upgrading dsh past 0.1.1-rc.7 left the embedded panel unable to start: 0.1.2-rc.1 prints an *authenticated* launch URL (`dsh web: http://127.0.0.1:<port>/?token=…`), requires a browser-session cookie (minted from that token) for `/` and every `/api` call, moves the RPC API to Typert `namespace/method` endpoints (workspace listing is now the `workspace/follow` stream baseline), and serves a frontend dist that references its assets relatively (`./assets/...`) with a new `batches` boot section. The extension now exchanges the launch token for the session cookie **before** the server is marked ready, attaches it to every relayed request / WebSocket upgrade / panel assembly, speaks the 0.1.2 RPC surface (session list, create, rename, archive, workspace alignment), and assembles the 0.1.2 dist layout.
+- **Clear error instead of a half-broken state on old dsh** — the extension now requires dsh **0.1.2-rc.1 or newer**; an older build is refused at start with a helpful upgrade message (older dsh speaks the pre-0.1.2 API surface, which is no longer supported).
+- **"Open in Browser" opened a dead URL** — the command now opens the authenticated URL (`?token=…`) so a real browser can mint its own session cookie, instead of landing on the 401 page.
+
 ## [0.3.3] - 2026-08-22
 
 ### Fixed

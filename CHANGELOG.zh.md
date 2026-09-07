@@ -7,6 +7,13 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.3.4] - 2026-09-07
+
+### 修复
+- **适配 dsh 0.1.2-rc.1** —— dsh 升级过 0.1.1-rc.7 后内嵌面板无法启动：0.1.2-rc.1 启动行改为带令牌的认证 URL（`dsh web: http://127.0.0.1:<port>/?token=…`），`/` 与全部 `/api` 要求由该令牌换发的浏览器会话 Cookie，RPC 改走 Typert `namespace/method` 端点（工作区列表改为 `workspace/follow` 流基线），前端 dist 改相对引用资源（`./assets/...`）并新增 `batches` boot 段。扩展现在**在服务就绪前**完成令牌换 Cookie，并注入到所有代发请求 / WebSocket 升级 / 面板组装；宿主 RPC 全面迁移到 0.1.2 表面（会话列表/新建/改名/归档、工作区对齐）；文档组装适配 0.1.2 dist 布局。
+- **旧版 dsh 给清晰报错而非半残状态** —— 扩展现在要求 dsh **0.1.2-rc.1 或更新**；更旧的版本在启动时被拒绝并给出升级提示（旧版走 pre-0.1.2 API，已不再支持）。
+- **"Open in Browser" 打开的是死链** —— 命令改为打开带令牌的认证 URL（`?token=…`），让真实浏览器自行换发 Cookie，不再落到 401 页。
+
 ## [0.3.3] - 2026-08-22
 
 ### 修复
