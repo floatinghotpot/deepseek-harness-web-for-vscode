@@ -43,10 +43,10 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 | dsh4vscode version | Compatible dsh |
 |---|---|
-| `0.3.4` (current) | `0.1.2-rc.1` |
+| `0.3.4` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.3.3` | `0.1.1-rc.7` and older |
 
-- dsh `0.1.2-rc.1` reworked its Web surface (browser-session authentication, Typert RPC, new dist layout), which extension `≤ 0.3.3` cannot use. Extension `0.3.4` in turn requires dsh `≥ 0.1.2-rc.1` (older builds are refused with an upgrade hint), so an old dsh must pair with `0.3.3` or earlier.
+- The versions above are the tested pairings. dsh `0.1.2-rc.1` reworked its Web surface (browser-session authentication, Typert RPC, new dist layout), which extension `≤ 0.3.3` cannot use; extension `0.3.4` in turn requires dsh `≥ 0.1.2-rc.1` (older builds are refused with an upgrade hint), so an old dsh must pair with `0.3.3`.
 - No hard cap on newer dsh versions, but dsh moves fast — give the embedded panel one regression check after upgrading dsh.
 
 ## Install
