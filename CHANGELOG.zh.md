@@ -7,6 +7,13 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.3.5] - 2026-09-15
+
+### 修复
+- **内嵌设置页可用** —— DSH 只在 loopback 页面创建设置控制器（`isLoopback = transport?.ownsHost === true || … || isLoopbackHostname(pageLocation.hostname)`），而内嵌页面源 `vscode-webview://…` 永远不是 loopback：设置 → Models 报 *"settings are unavailable in this browser"*，且所有设置只存内存、不落盘。现在 webview 桥声明"内嵌外壳即宿主"（DSH 为此预留的 `__DSH_TRANSPORT__` 接缝），Settings → Models 可打开，API key 可填写保存，设置持久化到 `~/.dsh/settings.yaml`。
+- **主题同步重新写入 DSH** —— 主题同步仍在调用 0.1.2 之前的 `settings.update` 点号方法且不带会话 Cookie，自 dsh 0.1.2-rc.1 起一直静默失败（被页面内主题 shim 掩盖）。现改走 `settings/update`，复用 manager 的信封与会话 Cookie，`ui-theme.preference` 真正落盘。
+- **侧边栏显示 `dsh4vscode v…`** —— 启动器副标题由 `extension v0.3.5` 改为 `dsh4vscode v0.3.5`。
+
 ## [0.3.4] - 2026-09-07
 
 ### 修复

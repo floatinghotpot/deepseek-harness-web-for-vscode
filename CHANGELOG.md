@@ -7,6 +7,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-09-15
+
+### Fixed
+- **The embedded Settings page works** — DSH only creates its settings controller on a loopback page (`isLoopback = transport?.ownsHost === true || … || isLoopbackHostname(pageLocation.hostname)`), and the embedded page origin (`vscode-webview://…`) is never loopback, so Settings → Models reported *"settings are unavailable in this browser"* and every preference stayed in memory. The webview bridge now declares the embedding shell as the host owner (the `__DSH_TRANSPORT__` seam DSH reads for exactly this), so Settings → Models opens, API keys can be entered and saved, and preferences persist in `~/.dsh/settings.yaml`.
+- **Theme sync writes to DSH again** — theme sync still called the pre-0.1.2 `settings.update` dot method without the session cookie, so it had been failing silently since dsh 0.1.2-rc.1 (masked by the in-page theme shim). It now goes through `settings/update` with the manager's envelope and session cookie, so `ui-theme.preference` is actually persisted.
+- **Sidebar shows `dsh4vscode v…`** — the launcher subtitle now reads `dsh4vscode v0.3.5` instead of `extension v0.3.5`.
+
 ## [0.3.4] - 2026-09-07
 
 ### Fixed
