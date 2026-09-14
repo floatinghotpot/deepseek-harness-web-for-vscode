@@ -29,7 +29,7 @@ export function activate(context: vscode.ExtensionContext): void {
   manager.on("log", (msg: string) => console.log("[dsh]", msg));
   manager.on("stderr", (msg: string) => console.log("[dsh]", msg));
 
-  const theme = registerThemeSync(context, () => manager?.serverUrl);
+  const theme = registerThemeSync(context, manager);
   // Persist the open-panel sessionId list (02 T6): survives window reload so
   // the auto-restart path can restore every panel bound to its session.
   const persistPanels = (ids: string[]): void => {

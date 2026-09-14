@@ -1,8 +1,15 @@
 // Theme sync (R7/T12): mirror the VS Code color theme into the DSH host
-// settings via the api (settings.update ns "ui-theme"), so the embedded UI
-// never renders light-on-dark. Honored only while the `deepseekHarness
-// .themeSync` setting is "follow" (default).
+// settings (settings/update, namespace "ui-theme"), so the embedded UI never
+// renders light-on-dark. Honored only while the `deepseekHarness.themeSync`
+// setting is "follow" (default).
+//
+// Since 0.1.2-rc.1 the RPC surface is namespace/method and `/api` requires the
+// browser-session cookie, so the write goes through DshServerManager (which
+// owns both) instead of a hand-rolled `settings.update` request — that legacy
+// call silently failed (401/404) while the in-page matchMedia shim kept the
+// theme looking right.
 import * as vscode from "vscode";
+import type { DshServerManager } from "./serverManager.js";
 
 const SETTINGS_NS = "ui-theme";
 
@@ -12,23 +19,13 @@ function preferenceFor(kind: vscode.ColorThemeKind): "dark" | "light" {
     : "light";
 }
 
-async function syncNow(getServerBase: () => string | undefined): Promise<void> {
-  const base = getServerBase();
-  if (!base) return;
+async function syncNow(manager: DshServerManager): Promise<void> {
+  if (!manager.serverUrl) return;
   const cfg = vscode.workspace.getConfiguration("deepseekHarness");
   if (cfg.get<string>("themeSync") !== "follow") return;
   const preference = preferenceFor(vscode.window.activeColorTheme.kind);
   try {
-    await fetch(base + "/api/settings.update", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "client-request",
-        rpcId: "theme-sync-" + Date.now(),
-        method: "settings.update",
-        payload: { ns: SETTINGS_NS, patch: { preference } },
-      }),
-    });
+    await manager.updateSettings(SETTINGS_NS, { preference });
   } catch (err) {
     console.log("[dsh] theme sync failed:", err);
   }
@@ -37,12 +34,12 @@ async function syncNow(getServerBase: () => string | undefined): Promise<void> {
 /** Register the theme-change listener; returns syncNow for start-time calls. */
 export function registerThemeSync(
   context: vscode.ExtensionContext,
-  getServerBase: () => string | undefined
+  manager: DshServerManager
 ): { syncNow: () => Promise<void> } {
   context.subscriptions.push(
     vscode.window.onDidChangeActiveColorTheme(() => {
-      void syncNow(getServerBase);
+      void syncNow(manager);
     })
   );
-  return { syncNow: () => syncNow(getServerBase) };
+  return { syncNow: () => syncNow(manager) };
 }

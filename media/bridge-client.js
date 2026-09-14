@@ -14,6 +14,25 @@
   var bridge = window.__DSH_BRIDGE__ || { serverBase: "" };
   var vscode = acquireVsCodeApi();
   var nextId = 1;
+
+  // ------------------------------------------------- loopback seam (settings)
+  // DSH only creates its settings controller on a loopback page
+  // (dsh-client-connection/lib/client.js:6344):
+  //   isLoopback = transport?.ownsHost === true || pageLocation === void 0
+  //                || isLoopbackHostname(pageLocation.hostname)
+  // and derives settings persistence from the same flag
+  // (dsh-client-ui-settings/lib/client.js:1345):
+  //   persistence = isLoopback ? "host" : "memory"
+  // An embedded page never has a loopback origin (vscode-webview://…), so
+  // Settings reported "settings are unavailable in this browser" and every
+  // preference stayed in memory. `__DSH_TRANSPORT__` is read-only in DSH
+  // (never pre-populated) and its only use here is `ownsHost`: declaring the
+  // embedding shell as the host owner — the server IS loopback, only the page
+  // origin is not. Its fetch/openStream are left undefined on purpose, so
+  // createWebConnectionRpc falls back to the page's (shimmed) fetch and the
+  // WebSocket stream mux — the normal browser path. Non-destructive: a
+  // transport already provided by a host wins.
+  if (!window.__DSH_TRANSPORT__) window.__DSH_TRANSPORT__ = { ownsHost: true };
   var pendingHttp = new Map(); // id -> { resolve, reject }
   var pendingClipboard = new Map(); // id -> { resolve, reject }
   var sockets = []; // BridgeWebSocket registry by _id

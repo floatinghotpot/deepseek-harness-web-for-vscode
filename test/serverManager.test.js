@@ -611,6 +611,42 @@ test("ensureWorkspaceSession creates the workspace and a bound session when none
   }
 });
 
+test("updateSettings sends the 0.1.2 settings/update envelope with the session cookie", async () => {
+  const manager = apiManager();
+  manager.authCookie = "dsh-auth-test=v1.sig";
+  let sent;
+  let headers;
+  const real = global.fetch;
+  global.fetch = async (_url, opts) => {
+    sent = JSON.parse(opts.body);
+    headers = opts.headers;
+    return { json: async () => ({ result: { ok: true, value: { ns: "ui-theme" } } }) };
+  };
+  try {
+    await manager.updateSettings("ui-theme", { preference: "dark" });
+    assert.equal(sent.method, "settings/update");
+    assert.deepEqual(sent.payload, { args: { ns: "ui-theme", patch: { preference: "dark" } } });
+    assert.equal(headers.cookie, "dsh-auth-test=v1.sig", "cookie must ride the settings write");
+  } finally {
+    global.fetch = real;
+  }
+});
+
+test("updateSettings surfaces a DSH error (no silent theme-sync failure)", async () => {
+  const manager = apiManager();
+  const restore = mockFetch(() => ({
+    result: { ok: false, error: { code: "settings/read-only", message: "document is read-only" } },
+  }));
+  try {
+    await assert.rejects(manager.updateSettings("ui-theme", { preference: "dark" }), (err) => {
+      assert.equal(err.code, "settings/read-only");
+      return true;
+    });
+  } finally {
+    restore();
+  }
+});
+
 test("openStreamFirstFrame resolves the first item frame (workspace/follow baseline)", async () => {
   const { openStreamFirstFrame } = require("../out/serverManager.js");
   const instance = { sent: [], listeners: {} };

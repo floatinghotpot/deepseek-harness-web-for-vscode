@@ -19,7 +19,7 @@ const SCRIPT = require("node:fs").readFileSync(
 );
 
 /** Install browser globals, run the bridge script, return a probe handle. */
-function loadBridge(bridgeInit) {
+function loadBridge(bridgeInit, preWindow) {
   const posted = [];
   const nativeFetchCalls = [];
   const listeners = {};
@@ -51,6 +51,9 @@ function loadBridge(bridgeInit) {
   // Node ≥21 exposes a read-only global navigator; the bridge only adds a
   // `clipboard` property to it, which is allowed.
   const navigator = globalThis.navigator;
+  // Props the caller wants present before the script runs (e.g. a host-provided
+  // __DSH_TRANSPORT__).
+  if (preWindow) Object.assign(window, preWindow);
 
   globalThis.window = window;
   globalThis.location = location;
@@ -134,6 +137,21 @@ test("clipboard shim relays writeText and resolves clipboard-res", async () => {
   assert.equal(h.posted[0].text, "hello");
   h.listeners.message.forEach((fn) => fn({ data: { type: "clipboard-res", id: h.posted[0].id, ok: true } }));
   await p; // resolves without rejection
+});
+
+test("bridge declares the host-owned transport so DSH treats the embedded page as loopback", () => {
+  // The webview origin (vscode-webview://…) is never loopback, so
+  // dsh-client-connection computed isLoopback=false ⇒ the settings controller
+  // was never created ("settings are unavailable in this browser") and
+  // persistence fell back to "memory".
+  const h = loadBridge();
+  assert.deepEqual(h.window.__DSH_TRANSPORT__, { ownsHost: true });
+});
+
+test("a host-provided __DSH_TRANSPORT__ is preserved", () => {
+  const existing = { ownsHost: false, custom: true };
+  const h = loadBridge(undefined, { __DSH_TRANSPORT__: existing });
+  assert.equal(h.window.__DSH_TRANSPORT__, existing);
 });
 
 test("matchMedia shim follows __DSH_BRIDGE__.dark and theme-preference messages", () => {

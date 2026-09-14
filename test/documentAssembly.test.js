@@ -197,6 +197,32 @@ test("assembleDocument injects the session preset before the module script (req 
   assert.ok(html.includes(`localStorage.setItem("dsh.sessions.current", ${JSON.stringify(preset)})`));
 });
 
+test("assembleDocument injects the bridge before the DSH plugin preloads", async (t) => {
+  // The webview-side bridge (media/bridge-client.js) must run before DSH's
+  // client plugins load (it installs the fetch/WebSocket/clipboard shims the
+  // page depends on), so the injected script must precede the /plugins preloads.
+  const server = await serveDist(t);
+  const dist = tmpdir(t);
+
+  const { html } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "/*bridge-marker*/",
+    cspSource: "x",
+    log: () => {},
+  });
+
+  const bridgePos = html.indexOf("bridge-marker");
+  const preloadPos = html.indexOf('src="' + server.url + '/plugins/');
+  assert.ok(bridgePos !== -1, "bridge script missing");
+  assert.ok(preloadPos !== -1, "plugin preload missing");
+  assert.ok(
+    bridgePos < preloadPos,
+    `bridge (${bridgePos}) must precede the plugin preloads (${preloadPos})`
+  );
+});
+
 test("assembleDocument omits the preset script when none is provided", async (t) => {
   const server = await serveDist(t);
   const dist = tmpdir(t);

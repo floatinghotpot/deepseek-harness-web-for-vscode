@@ -783,6 +783,16 @@ export class DshServerManager extends EventEmitter {
     return value.archivedSessionIds ?? [];
   }
 
+  /**
+   * Patch one DSH settings namespace (settings/update, 0.1.2+ surface). Lives
+   * on the manager so external callers (theme sync) reuse api()'s envelope and
+   * browser-session cookie instead of hand-rolling a request — the pre-0.1.2
+   * `settings.update` dot method silently 401/404s on current dsh.
+   */
+  async updateSettings(ns: string, patch: Record<string, unknown>): Promise<void> {
+    await this.api("settings/update", { ns, patch });
+  }
+
   /** SIGTERM, escalate to SIGKILL after a grace period. */
   stop(): void {
     // If a start() is still pending (e.g. stopped during the ready window),
