@@ -356,3 +356,74 @@ test("assembleDocument sends the browser-session cookie on every server fetch", 
     assert.equal(req.cookie, "dsh-auth-test=v1.sig", `cookie missing on ${req.url}`);
   }
 });
+
+// --- dsh 0.1.7-rc.1: <base>-relative plugin URLs ---------------------------
+// 0.1.7-rc.1 switched the index to <base href="./">: plugin preloads, boot
+// entries and batches all became base-relative ("plugins/??pkg/client.js",
+// no leading slash). Left unrewritten they resolve against vscode-webview://
+// and the panel shows "Failed to load plugins / HTML did not preload
+// @deepseek-ai/dsh-client-modules/client.js".
+
+/** Serve a fake 0.1.7-rc.1-shaped dist (relative plugins/ refs, 2 app batches). */
+function serveDist017(t) {
+  const files = new Map([
+    ["/", `<!doctype html><html lang="en"><head><base href="./"><script>(()=>{window.__ModuleLoader__={mode:"queue",pendingQueue:[],load(){},create(){}}})()</script><link rel="preload" as="script" href="plugins/??@deepseek-ai/dsh-client-ui-open-in-app/client.js,@deepseek-ai/dsh-api-gateway/client.js&amp;rev=aaa"><link rel="preload" as="script" href="plugins/??@deepseek-ai/dsh-api-workspace-controller/client.js&amp;rev=bbb"><script src="plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=acaba2ea6b67"></script><script>globalThis["__DSH_BOOT__"] = {"rev":"rev017","entries":[{"id":"p","url":"plugins/??@deepseek-ai/dsh-api-gateway/client.js&rev=1"}],"batches":[{"phase":"bootstrap","url":"plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=2","entries":["@deepseek-ai/dsh-client-modules"]},{"phase":"application","url":"plugins/??@deepseek-ai/dsh-api-gateway/client.js&rev=3","entries":["p"]}]}</script><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="./favicon-dark.svg" media="(prefers-color-scheme: dark)"><link rel="icon" type="image/svg+xml" href="./favicon.svg" media="(prefers-color-scheme: light)"><script type="module" crossorigin src="./assets/index-abc.js"></script></head><body><div id="root"></div></body></html>`],
+    ["/assets/index-abc.js", "shell-content"],
+    ["/manifest.webmanifest", `{"name":"x"}`],
+    ["/favicon.svg", "<svg/>"],
+    ["/favicon-dark.svg", "<svg/>"],
+  ]);
+  const server = http.createServer((req, res) => {
+    const body = files.get(req.url);
+    if (body === undefined) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end(body);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      t.after(() => server.close());
+      resolve({ url: `http://127.0.0.1:${port}` });
+    });
+  });
+}
+
+test("assembleDocument handles the 0.1.7 <base>-relative plugins/ layout", async (t) => {
+  const server = await serveDist017(t);
+  const dist = tmpdir(t);
+
+  const { html, distRev } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "/*bridge*/",
+    cspSource: "x",
+    log: () => {},
+  });
+  assert.equal(distRev, "rev017");
+
+  // 1. No base-relative plugin ref may survive (they would hit vscode-webview://).
+  const relative = [...html.matchAll(/(?:src|href)="((?:\.\/)?\/?plugins\/[^"]*)"/g)].filter(
+    (m) => !m[1].startsWith("http")
+  );
+  assert.deepEqual(relative.map((m) => m[1]), [], "base-relative plugin refs left");
+
+  // 2. Preloads + the bootstrap loader are absolutized against the server.
+  assert.ok(html.includes(`href="${server.url}/plugins/??@deepseek-ai/dsh-client-ui-open-in-app/client.js,@deepseek-ai/dsh-api-gateway/client.js&amp;rev=aaa"`));
+  assert.ok(html.includes(`src="${server.url}/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=acaba2ea6b67"`), "bootstrap loader not absolutized");
+
+  // 3. Boot entries and BOTH application batches (0.1.7 splits them) too.
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-api-gateway/client.js&rev=1"`));
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=2"`));
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-api-gateway/client.js&rev=3"`));
+  const bootRelative = [...html.matchAll(/"url":"((?:\.\/)?\/?plugins\/[^"]*)"/g)];
+  assert.deepEqual(bootRelative.map((m) => m[1]), [], "boot JSON still has relative plugin urls");
+
+  // 4. Both favicons (0.1.7 added a dark one) point at the server.
+  assert.ok(html.includes(`href="${server.url}/favicon-dark.svg"`));
+  assert.ok(html.includes(`href="${server.url}/favicon.svg"`));
+});

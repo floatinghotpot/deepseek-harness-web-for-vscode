@@ -55,7 +55,9 @@ const SHELL_IMPORT_RE = /\.\/((?:vendor|langs)\/[A-Za-z0-9_.-]+\.js)/g;
 // capture runs to the closing `</script>`.
 const BOOT_RE = /(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])\s*=\s*(\{.*?\})<\/script>/s;
 const REV_RE = /"rev"\s*:\s*"([^"]+)"/;
-const SERVER_STATIC_RE = /(src|href)="(?:\.\/)?\/?(manifest\.webmanifest|favicon\.svg)"/g;
+// Server statics: manifest + favicon(s) are referenced relative to <base>.
+// 0.1.7-rc.1 added a separate dark favicon, hence the optional suffix.
+const SERVER_STATIC_RE = /(src|href)="(?:\.\/)?\/?(manifest\.webmanifest|favicon(?:-[a-z]+)?\.svg)"/g;
 // DSH boot-manifest preloads: injectBootManifest (dsh-client-modules >= rc.8)
 // emits blocking <script src="/plugins/..."> tags for @deepseek-ai/dsh-client-modules
 // and @deepseek-ai/dsh-client-runtime before window.__DSH_BOOT__. They are
@@ -63,7 +65,21 @@ const SERVER_STATIC_RE = /(src|href)="(?:\.\/)?\/?(manifest\.webmanifest|favicon
 // the JSON entries, or the webview resolves them against vscode-webview://
 // and the module-system queue never receives the client-modules registration
 // ("Failed to load plugins / HTML did not preload .../client.js").
-const PLUGIN_PRELOAD_RE = /(src|href)="(\/plugins\/[^"]+)"/g;
+//
+// 0.1.7-rc.1 switched these to the <base href="./">-relative form
+// ("plugins/??pkg/client.js;rev=…", no leading slash), so the matcher — and
+// the boot-graph rewrite below — accept both shapes.
+const PLUGIN_REF_RE = /(src|href)="((?:\.\/)?\/?plugins\/[^"]+)"/g;
+
+/**
+ * Normalize one plugin reference ("plugins/??pkg/client.js&rev=…",
+ * "./plugins/…", "/plugins/…") into the absolute server URL. Returns null for
+ * anything else so callers can leave the original text untouched.
+ */
+function serverPluginUrl(ref: string, serverBase: string): string | null {
+  const clean = ref.replace(/^\.\//, "").replace(/^\//, "");
+  return clean.startsWith("plugins/") ? `${serverBase}/${clean}` : null;
+}
 
 /**
  * Normalize an index asset reference ("./assets/x.js", "/assets/x.js",
@@ -110,7 +126,9 @@ export function extractRev(html: string): string {
 /**
  * Rewrite the boot graph's plugin URLs to absolute server URLs (F14).
  * Since 0.1.2-rc.1 the manifest also carries a `batches` array
- * ({phase, url: "/plugins/??...", ...}) whose urls need the same treatment.
+ * ({phase, url: "/plugins/??...", ...}) whose urls need the same treatment;
+ * 0.1.7-rc.1 makes every plugin URL <base>-relative ("plugins/??..."), so both
+ * shapes are normalized here.
  */
 export function rewriteBootPluginUrls(html: string, serverBase: string): string {
   const m = html.match(BOOT_RE);
@@ -121,11 +139,20 @@ export function rewriteBootPluginUrls(html: string, serverBase: string): string 
   } catch {
     return html;
   }
+  const absolutize = (url: string | undefined): string | undefined => {
+    if (typeof url !== "string") return undefined;
+    const plugin = serverPluginUrl(url, serverBase);
+    if (plugin) return plugin;
+    // Preserve the pre-0.1.7 behavior exactly: any other "/"-rooted server path
+    // in the graph was prefixed with the server base too. Returning undefined
+    // leaves the original value untouched.
+    return url.startsWith("/") ? `${serverBase}${url}` : undefined;
+  };
   for (const entry of graph.entries ?? []) {
-    if (entry.url?.startsWith("/")) entry.url = serverBase + entry.url;
+    entry.url = absolutize(entry.url) ?? entry.url;
   }
   for (const batch of graph.batches ?? []) {
-    if (batch.url?.startsWith("/")) batch.url = serverBase + batch.url;
+    batch.url = absolutize(batch.url) ?? batch.url;
   }
   const next = JSON.stringify(graph).replaceAll("<", "\\u003c");
   return html.replace(m[1], next);
@@ -138,9 +165,14 @@ export function rewriteBootPluginUrls(html: string, serverBase: string): string 
  * before window.__DSH_BOOT__; like the JSON entries they must point at the
  * server or the webview origin lookup fails and the module-system queue stays
  * empty ("Failed to load plugins / HTML did not preload .../client.js").
+ * 0.1.7-rc.1 emits them <base>-relative ("plugins/??..."), which is why the
+ * matcher accepts both shapes.
  */
 export function rewriteBootPluginPreloads(html: string, serverBase: string): string {
-  return html.replace(PLUGIN_PRELOAD_RE, (_m, attr: string, url: string) => `${attr}="${serverBase}${url}"`);
+  return html.replace(PLUGIN_REF_RE, (m, attr: string, url: string) => {
+    const abs = serverPluginUrl(url, serverBase);
+    return abs ? `${attr}="${abs}"` : m;
+  });
 }
 
 function buildCsp(cspSource: string): string {
