@@ -7,6 +7,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.3.6] - 2026-09-24
+
+### 修复
+- **适配 dsh 0.1.7-rc.1** —— 0.1.7-rc.1 把 index 改成了 `<base href="./">`，于是所有插件引用都变成**相对 `<base>` 的形式**（`plugins/??pkg/client.js`，不再有前导斜杠）：preload 标签、boot manifest 的 entries、batches（application 批次也从 1 个变成 2 个）全部如此。扩展原先只认绝对形式 `/plugins/...`，导致一处都没被改写成服务器地址，面板因此报 *"Failed to load plugins — client-modules: HTML did not preload …/client.js"*。现在三种形态（相对、`./` 相对、绝对）统一归一化，新增的 `favicon-dark.svg` 也一并处理；旧的绝对形式行为与之前完全一致——已对 dsh `0.1.5-rc.2`（输出不变）与 `0.1.7-rc.1` 做端到端验证。
+
 ## [0.3.5] - 2026-09-15
 
 ### 修复

@@ -7,6 +7,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-09-24
+
+### Fixed
+- **Works with dsh 0.1.7-rc.1** — 0.1.7-rc.1 switched its index to `<base href="./">`, which made every plugin reference *base-relative* (`plugins/??pkg/client.js` instead of `/plugins/...`) in the preload tags, the boot-manifest entries and the boot batches (there are now two application batches). The extension only recognized the absolute form, so none of them were rewritten to the server and the panel showed *"Failed to load plugins — client-modules: HTML did not preload …/client.js"*. Plugin references are now normalized from all three shapes (relative, `./`-relative, absolute), the extra `favicon-dark.svg` is handled, and the previous absolute form keeps behaving exactly as before — verified against dsh `0.1.5-rc.2` (unchanged output) and `0.1.7-rc.1` end to end.
+
 ## [0.3.5] - 2026-09-15
 
 ### Fixed
